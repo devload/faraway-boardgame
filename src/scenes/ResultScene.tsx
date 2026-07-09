@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useMatch } from '../store/matchStore.ts'
 import { useUI } from '../store/uiStore.ts'
@@ -166,17 +166,50 @@ function TableauReveal({
   const highlightedId = entries[revealedCount - 1]?.card.id
   const currentEntry = entries[revealedCount - 1]
 
+  // Refs per slot so we can auto-scroll the currently scoring card into view.
+  const stripRef = useRef<HTMLDivElement>(null)
+  const cardRefs = useRef<Record<number, HTMLDivElement | null>>({})
+
+  // 1) On mount / any change to tableau length, scroll to the far RIGHT so
+  //    the player sees where scoring is about to start.
+  useEffect(() => {
+    if (!stripRef.current) return
+    stripRef.current.scrollTo({ left: stripRef.current.scrollWidth, behavior: 'auto' })
+  }, [tableau.length])
+
+  // 2) When the highlighted card changes, scroll it into the horizontal
+  //    center of the strip so the player sees the animation.
+  useEffect(() => {
+    if (highlightedId == null) return
+    const el = cardRefs.current[highlightedId]
+    if (el && el.scrollIntoView) {
+      el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
+    }
+  }, [highlightedId])
+
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex gap-1 overflow-x-auto py-2">
+      {/* Scan direction hint */}
+      <div className="flex items-center justify-between font-mono text-[9px] tracking-widest uppercase text-earth-brown">
+        <span>왼쪽 · R1 셋업</span>
+        <span className="text-sunset-deep">◀ 채점 방향</span>
+        <span>오른쪽 · R{tableau.length} 스코어러</span>
+      </div>
+
+      <div ref={stripRef} className="flex gap-1 overflow-x-auto py-2 scroll-smooth">
         {tableau.map((card, i) => {
           const scored = scoredIds.has(card.id)
           const entry = entries.find((e) => e.card.id === card.id)
           const highlight = highlightedId === card.id
           return (
-            <div key={i} className="relative flex flex-col items-center">
+            <div
+              key={i}
+              ref={(el) => { cardRefs.current[card.id] = el }}
+              className="relative flex flex-col items-center shrink-0"
+            >
               <div className={`transition-all duration-500 ${scored ? 'opacity-100' : 'opacity-45'}
-                              ${highlight ? 'scale-105' : ''}`}>
+                              ${highlight ? 'scale-110 -translate-y-1' : ''}`}
+                   style={highlight ? { filter: 'drop-shadow(0 0 12px rgba(212,165,116,0.65))' } : undefined}>
                 <RegionCardView card={card} size="sm" />
               </div>
               {scored && entry && (
