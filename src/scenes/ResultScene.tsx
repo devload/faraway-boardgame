@@ -1,0 +1,230 @@
+import { useMemo, useState, useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { useMatch } from '../store/matchStore.ts'
+import { useUI } from '../store/uiStore.ts'
+import { scorePlayer } from '../game/scoring.ts'
+import { RegionCardView } from '../ui/RegionCardView.tsx'
+import { SunsetCTA } from '../ui/SunsetCTA.tsx'
+import { Chip } from '../ui/Chip.tsx'
+import { ICON_EMOJI } from '../game/types.ts'
+
+/**
+ * ResultScene — the scoring ceremony.
+ *
+ * Sequence:
+ *   1. Show both tableaux
+ *   2. Reveal scores card-by-card, right → left, with a delay so the
+ *      player can see the mechanic in action
+ *   3. Show final totals + winner
+ */
+export function ResultScene() {
+  const state = useMatch((s) => s.state)
+  const reset = useMatch((s) => s.reset)
+  const setScene = useUI((s) => s.setScene)
+  const [revealedCount, setRevealedCount] = useState(0)
+
+  const scores = useMemo(() => {
+    if (!state) return null
+    return {
+      human: scorePlayer('human', state.players.human.tableau, state.players.human.sanctuaries),
+      bot:   scorePlayer('bot',   state.players.bot.tableau,   state.players.bot.sanctuaries),
+    }
+  }, [state])
+
+  const humanTableauLen = state?.players.human.tableau.length ?? 0
+  const totalReveals = humanTableauLen // scan right-to-left
+
+  useEffect(() => {
+    if (!scores) return
+    if (revealedCount >= totalReveals) return
+    const t = setTimeout(() => setRevealedCount((c) => c + 1), 900)
+    return () => clearTimeout(t)
+  }, [revealedCount, totalReveals, scores])
+
+  if (!state || !scores) return null
+
+  const finalRegionHuman = revealedCount >= totalReveals ? scores.human.regionScore : 0
+
+  const humanTotal = revealedCount >= totalReveals ? scores.human.total : 0
+  const botTotal   = revealedCount >= totalReveals ? scores.bot.total : 0
+  const humanWon = humanTotal > botTotal
+  const draw = humanTotal === botTotal
+
+  const done = revealedCount >= totalReveals
+
+  return (
+    <div className="w-full h-full flex flex-col pt-safe pb-safe px-4 overflow-y-auto">
+      <div className="flex justify-between items-center pt-4 pb-2">
+        <Chip variant="sunset" size="xs">RESULT</Chip>
+        <div className="font-mono text-[10px] tracking-[0.2em] text-earth-brown uppercase">
+          // {done ? 'FINAL' : 'SCORING…'}
+        </div>
+      </div>
+
+      {/* Human tableau + reveal */}
+      <div className="mt-4">
+        <div className="flex items-baseline justify-between">
+          <div className="font-serif italic text-lg text-night-indigo">내 여정</div>
+          <div className="flex items-baseline gap-1">
+            <span className="font-display text-4xl text-gold leading-none"
+                  style={{ textShadow: '0 0 12px rgba(212,165,116,0.6)' }}>
+              {humanTotal}
+            </span>
+            <span className="font-mono text-[10px] tracking-widest text-earth-brown">PTS</span>
+          </div>
+        </div>
+
+        {/* Region vs sanctuary breakdown */}
+        <div className="flex gap-3 mt-1 mb-2 font-mono text-[10px] text-earth-brown">
+          <span>지역 <span className="font-display text-sm text-night-indigo">{finalRegionHuman}</span></span>
+          <span>성소 <span className="font-display text-sm text-night-indigo">{done ? scores.human.sanctuaryScore : 0}</span></span>
+        </div>
+
+        <TableauReveal
+          tableau={state.players.human.tableau}
+          entries={scores.human.entries}
+          revealedCount={revealedCount}
+        />
+
+        {/* Sanctuaries */}
+        {state.players.human.sanctuaries.length > 0 && (
+          <div className="mt-2">
+            <div className="font-mono text-[9px] tracking-widest text-gold uppercase mb-1">
+              ✦ 획득한 성소
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {state.players.human.sanctuaries.map((s) => (
+                <div key={s.id} className="px-2 py-1 border border-gold/40 bg-gold/10 rounded-md">
+                  <div className="font-serif italic text-xs text-night-indigo">{s.name}</div>
+                  <div className="font-mono text-[9px] text-earth-brown">{s.description}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Bot summary */}
+      <div className="mt-6 p-3 bg-mist-blue/5 border border-mist-blue/20 rounded-md">
+        <div className="flex items-baseline justify-between">
+          <div className="font-serif italic text-sm text-mist-blue">
+            {state.players.bot.name}의 여정
+          </div>
+          <div className="flex items-baseline gap-1">
+            <span className="font-display text-2xl text-mist-blue leading-none">{botTotal}</span>
+            <span className="font-mono text-[9px] tracking-widest text-earth-brown">PTS</span>
+          </div>
+        </div>
+        <div className="flex gap-1 mt-2 overflow-x-auto">
+          {state.players.bot.tableau.map((c, i) => (
+            <RegionCardView key={i} card={c} size="xs" />
+          ))}
+        </div>
+      </div>
+
+      {/* Verdict */}
+      {done && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="mt-6 text-center"
+        >
+          <div className={`font-display text-4xl tracking-widest ${humanWon ? 'text-gold' : draw ? 'text-mist-blue' : 'text-earth-brown'}`}
+               style={humanWon ? { textShadow: '0 0 16px rgba(212,165,116,0.7)' } : undefined}>
+            {humanWon ? '승리' : draw ? '무승부' : '패배'}
+          </div>
+          <div className="font-serif italic text-mist-blue mt-1">
+            {humanWon ? '여명의 챔피언' : draw ? '동등한 여정' : '더 좋은 여정을 기약하며'}
+          </div>
+        </motion.div>
+      )}
+
+      {/* CTA */}
+      <div className="mt-6 mb-4 flex flex-col gap-2">
+        <SunsetCTA fullWidth
+                   onClick={() => {
+                     reset()
+                     setScene('lobby')
+                   }}>
+          ✦ 다시 여정 떠나기
+        </SunsetCTA>
+      </div>
+    </div>
+  )
+}
+
+function TableauReveal({
+  tableau, entries, revealedCount,
+}: {
+  tableau: readonly import('../game/types.ts').RegionCard[]
+  entries: readonly import('../game/types.ts').ScoreEntry[]
+  revealedCount: number
+}) {
+  // entries are already right-to-left. Match them by scanning tableau in reverse.
+  const scoredIds = new Set(entries.slice(0, revealedCount).map((e) => e.card.id))
+  const highlightedId = entries[revealedCount - 1]?.card.id
+  const currentEntry = entries[revealedCount - 1]
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex gap-1 overflow-x-auto py-2">
+        {tableau.map((card, i) => {
+          const scored = scoredIds.has(card.id)
+          const entry = entries.find((e) => e.card.id === card.id)
+          const highlight = highlightedId === card.id
+          return (
+            <div key={i} className="relative flex flex-col items-center">
+              <div className={`transition-all duration-500 ${scored ? 'opacity-100' : 'opacity-45'}
+                              ${highlight ? 'scale-105' : ''}`}>
+                <RegionCardView card={card} size="sm" />
+              </div>
+              {scored && entry && (
+                <motion.div
+                  initial={{ opacity: 0, y: -6, scale: 0.5 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  className="mt-1 font-display text-lg leading-none"
+                  style={{
+                    color: entry.earned > 0 ? '#d4a574' : '#8b6f47',
+                    textShadow: entry.earned > 0 ? '0 0 6px rgba(212,165,116,0.6)' : undefined,
+                  }}>
+                  {entry.earned > 0 ? `+${entry.earned}` : '0'}
+                </motion.div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Current scoring line detail */}
+      <AnimatePresence mode="wait">
+        {currentEntry && revealedCount > 0 && revealedCount <= entries.length && (
+          <motion.div
+            key={revealedCount}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="px-3 py-2 bg-parch-light border-l-4 border-sunset rounded-r-md"
+          >
+            <div className="font-serif italic text-sm text-night-indigo">
+              {currentEntry.card.name} {currentEntry.metRequirement ? '충족' : '실패'}
+            </div>
+            <div className="font-mono text-[10px] text-earth-brown mt-0.5">
+              필요:{' '}
+              {Object.keys(currentEntry.card.requirement).length === 0
+                ? '없음'
+                : Object.entries(currentEntry.card.requirement)
+                    .map(([icon, n]) => `${ICON_EMOJI[icon as keyof typeof ICON_EMOJI]}×${n}`)
+                    .join(' ')}
+              {' · '}
+              왼쪽 아이콘: {Object.entries(currentEntry.leftIcons)
+                .filter(([, n]) => n > 0)
+                .map(([icon, n]) => `${ICON_EMOJI[icon as keyof typeof ICON_EMOJI]}×${n}`)
+                .join(' ') || '없음'}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
