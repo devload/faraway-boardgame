@@ -37,20 +37,25 @@ export function ResultScene() {
   useEffect(() => {
     if (!scores) return
     if (revealedCount >= totalReveals) return
-    const t = setTimeout(() => setRevealedCount((c) => c + 1), 900)
+    // Slower pacing so the player can actually watch each card's condition
+    // check happen instead of numbers just jumping.
+    const t = setTimeout(() => setRevealedCount((c) => c + 1), 1600)
     return () => clearTimeout(t)
   }, [revealedCount, totalReveals, scores])
 
   if (!state || !scores) return null
 
-  const finalRegionHuman = revealedCount >= totalReveals ? scores.human.regionScore : 0
+  // Running totals — count up card-by-card as scoring walks right→left.
+  const runningRegionHuman = scores.human.entries
+    .slice(0, revealedCount)
+    .reduce((sum, e) => sum + e.earned, 0)
+  const done = revealedCount >= totalReveals
+  const runningSanctuaryHuman = done ? scores.human.sanctuaryScore : 0
+  const humanTotal = runningRegionHuman + runningSanctuaryHuman
 
-  const humanTotal = revealedCount >= totalReveals ? scores.human.total : 0
-  const botTotal   = revealedCount >= totalReveals ? scores.bot.total : 0
+  const botTotal = done ? scores.bot.total : 0
   const humanWon = humanTotal > botTotal
   const draw = humanTotal === botTotal
-
-  const done = revealedCount >= totalReveals
 
   return (
     <div className="w-full h-full flex flex-col pt-safe pb-safe px-4 overflow-y-auto">
@@ -66,18 +71,24 @@ export function ResultScene() {
         <div className="flex items-baseline justify-between">
           <div className="font-serif italic text-lg text-night-indigo">내 여정</div>
           <div className="flex items-baseline gap-1">
-            <span className="font-display text-4xl text-gold leading-none"
-                  style={{ textShadow: '0 0 12px rgba(212,165,116,0.6)' }}>
+            <motion.span
+              key={humanTotal}
+              initial={{ scale: 1.4, color: '#c48b6e' }}
+              animate={{ scale: 1, color: '#d4a574' }}
+              transition={{ duration: 0.4 }}
+              className="font-display text-4xl leading-none"
+              style={{ textShadow: '0 0 12px rgba(212,165,116,0.6)' }}
+            >
               {humanTotal}
-            </span>
+            </motion.span>
             <span className="font-mono text-[10px] tracking-widest text-earth-brown">PTS</span>
           </div>
         </div>
 
         {/* Region vs sanctuary breakdown */}
         <div className="flex gap-3 mt-1 mb-2 font-mono text-[10px] text-earth-brown">
-          <span>지역 <span className="font-display text-sm text-night-indigo">{finalRegionHuman}</span></span>
-          <span>성소 <span className="font-display text-sm text-night-indigo">{done ? scores.human.sanctuaryScore : 0}</span></span>
+          <span>지역 <span className="font-display text-sm text-night-indigo">{runningRegionHuman}</span></span>
+          <span>성소 <span className="font-display text-sm text-night-indigo">{runningSanctuaryHuman}</span></span>
         </div>
 
         <TableauReveal
@@ -196,7 +207,7 @@ function TableauReveal({
         <span>오른쪽 · R{tableau.length} 스코어러</span>
       </div>
 
-      <div ref={stripRef} className="flex gap-1 overflow-x-auto py-2 scroll-smooth">
+      <div ref={stripRef} className="flex gap-2 overflow-x-auto py-4 scroll-smooth px-2">
         {tableau.map((card, i) => {
           const scored = scoredIds.has(card.id)
           const entry = entries.find((e) => e.card.id === card.id)
@@ -205,31 +216,56 @@ function TableauReveal({
             <div
               key={i}
               ref={(el) => { cardRefs.current[card.id] = el }}
-              className="relative flex flex-col items-center shrink-0"
+              className="relative flex flex-col items-center shrink-0 pt-6"
             >
-              <div className={`transition-all duration-500 ${scored ? 'opacity-100' : 'opacity-45'}
+              {/* Verdict badge — appears above the card when it gets scored.
+                  Uses a ring color + icon to signal met vs missed clearly. */}
+              <AnimatePresence>
+                {scored && entry && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.3, y: 10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    transition={{ type: 'spring', damping: 12, stiffness: 260 }}
+                    className={`absolute -top-1 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1
+                                px-2 py-0.5 rounded-full font-mono text-[10px] font-bold border
+                                ${entry.earned > 0
+                                  ? 'bg-gold/90 border-gold text-night-indigo shadow-gold-glow'
+                                  : 'bg-earth-brown/90 border-earth-brown text-parch-cream'}`}
+                  >
+                    <span>{entry.earned > 0 ? '✓' : '✗'}</span>
+                    <span>{entry.earned > 0 ? `+${entry.earned}` : '0'}</span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <div className={`transition-all duration-500 ${scored ? 'opacity-100' : 'opacity-40'}
                               ${highlight ? 'scale-110 -translate-y-1' : ''}`}
-                   style={highlight ? { filter: 'drop-shadow(0 0 12px rgba(212,165,116,0.65))' } : undefined}>
+                   style={highlight ? { filter: 'drop-shadow(0 0 14px rgba(212,165,116,0.75))' } : undefined}>
                 <RegionCardView card={card} size="sm" />
               </div>
-              {scored && entry && (
-                <motion.div
-                  initial={{ opacity: 0, y: -6, scale: 0.5 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  className="mt-1 font-display text-lg leading-none"
-                  style={{
-                    color: entry.earned > 0 ? '#d4a574' : '#8b6f47',
-                    textShadow: entry.earned > 0 ? '0 0 6px rgba(212,165,116,0.6)' : undefined,
-                  }}>
-                  {entry.earned > 0 ? `+${entry.earned}` : '0'}
-                </motion.div>
-              )}
+
+              {/* Success/fail pulse ring under the card that just got scored */}
+              <AnimatePresence>
+                {scored && entry && highlight && (
+                  <motion.div
+                    initial={{ opacity: 0.8, scale: 0.7 }}
+                    animate={{ opacity: 0, scale: 1.4 }}
+                    transition={{ duration: 0.9, ease: 'easeOut' }}
+                    className="absolute inset-0 rounded-lg pointer-events-none"
+                    style={{
+                      boxShadow: entry.earned > 0
+                        ? '0 0 0 3px #d4a574, 0 0 24px 4px rgba(212,165,116,0.65)'
+                        : '0 0 0 3px #8b6f47, 0 0 20px 3px rgba(139,111,71,0.4)',
+                    }}
+                  />
+                )}
+              </AnimatePresence>
             </div>
           )
         })}
       </div>
 
-      {/* Current scoring line detail */}
+      {/* Current scoring line detail — icon-by-icon comparison */}
       <AnimatePresence mode="wait">
         {currentEntry && revealedCount > 0 && revealedCount <= entries.length && (
           <motion.div
@@ -237,24 +273,64 @@ function TableauReveal({
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="px-3 py-2 bg-parch-light border-l-4 border-sunset rounded-r-md"
+            className={`px-3 py-3 rounded-md border-l-4
+                        ${currentEntry.earned > 0
+                          ? 'bg-gold/15 border-gold'
+                          : 'bg-earth-brown/10 border-earth-brown/50'}`}
           >
-            <div className="font-serif italic text-sm text-night-indigo">
-              {currentEntry.card.name} {currentEntry.metRequirement ? '충족' : '실패'}
+            <div className="flex items-center justify-between mb-2">
+              <div className="font-serif italic text-sm text-night-indigo">
+                {currentEntry.card.name}
+              </div>
+              <div className={`font-mono text-[10px] tracking-widest uppercase font-bold
+                              ${currentEntry.earned > 0 ? 'text-gold' : 'text-earth-brown'}`}>
+                {Object.keys(currentEntry.card.requirement).length === 0
+                  ? `기본 +${currentEntry.card.points}`
+                  : currentEntry.metRequirement
+                    ? `✓ 충족 · +${currentEntry.card.points}`
+                    : '✗ 실패 · 0점'}
+              </div>
             </div>
-            <div className="font-mono text-[10px] text-earth-brown mt-0.5">
-              필요:{' '}
-              {Object.keys(currentEntry.card.requirement).length === 0
-                ? '없음'
-                : Object.entries(currentEntry.card.requirement)
-                    .map(([icon, n]) => `${ICON_EMOJI[icon as keyof typeof ICON_EMOJI]}×${n}`)
-                    .join(' ')}
-              {' · '}
-              왼쪽 아이콘: {Object.entries(currentEntry.leftIcons)
-                .filter(([, n]) => n > 0)
-                .map(([icon, n]) => `${ICON_EMOJI[icon as keyof typeof ICON_EMOJI]}×${n}`)
-                .join(' ') || '없음'}
-            </div>
+
+            {/* Icon-by-icon comparison table. Shows every required icon type
+                with need-count vs found-count, colored per success. */}
+            {Object.keys(currentEntry.card.requirement).length > 0 && (
+              <div className="grid grid-cols-[auto_1fr_auto] gap-x-3 gap-y-1 text-[11px]">
+                {Object.entries(currentEntry.card.requirement).map(([icon, need]) => {
+                  const found = currentEntry.leftIcons[icon as keyof typeof currentEntry.leftIcons] ?? 0
+                  const met = found >= (need ?? 0)
+                  return (
+                    <div key={icon} className="col-span-3 grid grid-cols-subgrid items-center gap-x-3">
+                      <span className="font-mono text-earth-brown">필요</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="emoji text-lg">{ICON_EMOJI[icon as keyof typeof ICON_EMOJI]}</span>
+                        <span className="font-display text-sm text-night-indigo">×{need}</span>
+                        <span className="mx-1 text-earth-brown">vs</span>
+                        <span className="font-mono text-earth-brown">왼쪽</span>
+                        <div className="flex gap-0.5 emoji">
+                          {Array.from({ length: Math.min(found, 6) }).map((_, i) => (
+                            <motion.span
+                              key={i}
+                              initial={{ opacity: 0, y: -4, scale: 0.5 }}
+                              animate={{ opacity: 1, y: 0, scale: 1 }}
+                              transition={{ delay: 0.15 * i, duration: 0.3 }}
+                              className="text-lg leading-none"
+                            >
+                              {ICON_EMOJI[icon as keyof typeof ICON_EMOJI]}
+                            </motion.span>
+                          ))}
+                          {found === 0 && <span className="text-earth-brown">없음</span>}
+                          {found > 6 && <span className="font-mono text-earth-brown">+{found - 6}</span>}
+                        </div>
+                      </div>
+                      <span className={`font-mono text-[10px] font-bold ${met ? 'text-gold' : 'text-earth-brown'}`}>
+                        {met ? '✓' : '✗'}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
