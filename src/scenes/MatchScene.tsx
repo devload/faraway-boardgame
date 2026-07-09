@@ -7,8 +7,21 @@ import { Chip } from '../ui/Chip.tsx'
 import { SunsetCTA } from '../ui/SunsetCTA.tsx'
 import { hasSanctuaryAccess, currentDrawer, isDrawPhaseComplete } from '../game/match.ts'
 import type { RegionCard, SanctuaryCard } from '../game/types.ts'
-import { ICON_EMOJI } from '../game/types.ts'
 
+/**
+ * Match scene layout — top to bottom:
+ *   1. Header (round dot bar)
+ *   2. Opponent strip (single row: icon + name + tableau count + sanctuary count)
+ *   3. Opponent tableau (xs cards — 8 slots visible)
+ *   4. My tableau (sm cards)
+ *   5. Phase-appropriate content:
+ *        - select phase → hand + tap-to-play
+ *        - draw phase   → market picker + hand preview
+ *   6. Me strip (footer)
+ *
+ * Entire container scrolls vertically so nothing gets clipped on tall
+ * or dense phases (draw phase in particular can be 500+px tall).
+ */
 export function MatchScene() {
   const state = useMatch((s) => s.state)
   const humanSelect = useMatch((s) => s.humanSelect)
@@ -19,7 +32,6 @@ export function MatchScene() {
 
   if (!state) return null
 
-  // End of match → go to result.
   if (state.phase === 'end') {
     return (
       <div className="w-full h-full flex flex-col items-center justify-center gap-6 px-6">
@@ -34,153 +46,113 @@ export function MatchScene() {
   const drawer = currentDrawer(state)
   const humanCanDraw = drawer === 'human'
 
-  const humanBotComparison = state.selections.human && state.selections.bot ? (
-    <div className="flex items-center gap-2 justify-center font-mono text-[11px] text-earth-brown">
-      <span>나 <span className="font-display text-lg text-sunset-deep">{state.selections.human.id}</span></span>
-      <span>vs</span>
-      <span>상대 <span className="font-display text-lg text-mist-blue">{state.selections.bot.id}</span></span>
-    </div>
-  ) : null
-
   return (
-    <div className="w-full h-full flex flex-col pt-safe pb-safe overflow-hidden">
-      {/* Header */}
-      <div className="flex justify-between items-center px-4 pt-4 pb-2">
-        <Chip variant="sunset" size="xs">R{state.round}/8</Chip>
-        <RoundDots current={state.round} total={8} />
-      </div>
+    <div className="w-full h-full overflow-y-auto pt-safe pb-safe">
+      <div className="flex flex-col gap-2 px-3 py-3">
 
-      {/* Opponent (bot) — thin strip up top */}
-      <PlayerStrip
-        who="상대"
-        icon={bot.icon}
-        name={bot.name}
-        tableauCount={bot.tableau.length}
-        sanctuaryCount={bot.sanctuaries.length}
-      />
+        {/* Header */}
+        <div className="flex justify-between items-center">
+          <Chip variant="sunset" size="xs">R{state.round}/8</Chip>
+          <RoundDots current={state.round} total={8} />
+        </div>
 
-      {/* Bot tableau — mini scale */}
-      <TableauStrip tableau={bot.tableau} label="상대 여정" mini />
+        {/* Opponent — compact strip (1 row) */}
+        <CompactStrip
+          side="foe"
+          name={bot.name}
+          icon={bot.icon}
+          hand={bot.hand.length}
+          sanctuaries={bot.sanctuaries.length}
+        />
 
-      {/* Center feedback: reveal or draw */}
-      <div className="flex-1 flex flex-col justify-center px-4 gap-3 min-h-0">
+        {/* Opponent tableau */}
+        <TableauStrip tableau={bot.tableau} label="상대 여정" size="xs" />
+
+        {/* My tableau */}
+        <TableauStrip tableau={human.tableau} label="내 여정" size="sm" mine />
+
+        {/* Me — compact strip */}
+        <CompactStrip
+          side="me"
+          name={human.name}
+          icon={human.icon}
+          hand={human.hand.length}
+          sanctuaries={human.sanctuaries.length}
+        />
+
+        {/* Phase content */}
         {state.phase === 'select' && (
-          <div className="text-center font-serif italic text-lg text-mist-blue">
-            손패에서 카드 한 장을 선택하세요.
-          </div>
+          <SelectPhase hand={human.hand} onPick={humanSelect} />
         )}
 
-        {state.phase === 'draw' && humanBotComparison}
-
-        {state.phase === 'draw' && humanCanDraw && (
-          <DrawPanel
-            state={state}
-            pickedSanctuary={pickedSanctuary}
-            setPickedSanctuary={setPickedSanctuary}
-            onPick={(region, sanctuaryId) => {
-              humanDraw(region, sanctuaryId)
-              setPickedSanctuary(null)
-            }}
-            eligibleForSanctuary={hasSanctuaryAccess(state, 'human')}
-          />
-        )}
-
-        {state.phase === 'draw' && !humanCanDraw && !isDrawPhaseComplete(state) && (
-          <div className="text-center font-serif italic text-mist-blue">
-            상대가 뽑는 중...
-          </div>
-        )}
-
-        {/* If draw phase is done (shouldn't linger visibly) auto-progress */}
-        {state.phase === 'draw' && isDrawPhaseComplete(state) && (
-          <div className="flex justify-center">
-            <SunsetCTA onClick={progress}>다음 라운드 →</SunsetCTA>
-          </div>
-        )}
-      </div>
-
-      {/* My tableau */}
-      <TableauStrip tableau={human.tableau} label="내 여정" />
-
-      {/* Hand at bottom (only in select phase) */}
-      <div className="px-4 pb-2 pt-3">
-        {state.phase === 'select' && (
-          <div className="flex justify-center gap-2">
-            <AnimatePresence>
-              {human.hand.map((c) => (
-                <motion.div key={c.id}
-                            layout
-                            initial={{ y: 40, opacity: 0 }}
-                            animate={{ y: 0, opacity: 1 }}
-                            exit={{ y: -40, opacity: 0, scale: 0.6 }}
-                            transition={{ type: 'spring', damping: 18, stiffness: 240 }}>
-                  <RegionCardView card={c} size="md" onClick={() => humanSelect(c)} />
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </div>
-        )}
         {state.phase === 'draw' && (
-          <>
-            <div className="text-center mb-1 font-mono text-[9px] tracking-widest text-earth-brown uppercase">
-              내 손패 ({human.hand.length}장) · 뽑은 카드가 여기에 합류합니다
-            </div>
-            <div className="flex justify-center gap-1.5 items-center">
-              {human.hand.map((c) => (
-                <RegionCardView key={c.id} card={c} size="sm" dim />
-              ))}
-              {/* Placeholder slot representing the incoming card */}
-              <div className="flex items-center gap-1">
-                <span className="font-display text-2xl text-sunset animate-pulse">+</span>
-                <div className="w-[86px] h-[124px] border-2 border-dashed border-sunset rounded-lg
-                                flex items-center justify-center text-center px-2
-                                bg-sunset/5">
-                  <div className="font-mono text-[8px] tracking-widest text-sunset-deep uppercase">
-                    새 카드<br/>여기로
-                  </div>
-                </div>
+          <div className="flex flex-col gap-3">
+            {state.selections.human && state.selections.bot && (
+              <PlayComparison humanNum={state.selections.human.id} botNum={state.selections.bot.id} />
+            )}
+
+            {humanCanDraw && (
+              <DrawPanel
+                state={state}
+                pickedSanctuary={pickedSanctuary}
+                setPickedSanctuary={setPickedSanctuary}
+                onPick={(region, sanctId) => {
+                  humanDraw(region, sanctId)
+                  setPickedSanctuary(null)
+                }}
+                eligibleForSanctuary={hasSanctuaryAccess(state, 'human')}
+                humanHand={human.hand}
+              />
+            )}
+
+            {!humanCanDraw && !isDrawPhaseComplete(state) && (
+              <div className="text-center font-serif italic text-mist-blue py-3">
+                상대가 뽑는 중...
               </div>
-            </div>
-          </>
+            )}
+
+            {isDrawPhaseComplete(state) && (
+              <div className="flex justify-center py-2">
+                <SunsetCTA onClick={progress}>다음 라운드 →</SunsetCTA>
+              </div>
+            )}
+          </div>
         )}
       </div>
-
-      {/* My status strip */}
-      <PlayerStrip who="나" icon={human.icon} name={human.name}
-                   tableauCount={human.tableau.length}
-                   sanctuaryCount={human.sanctuaries.length}
-                   mine />
     </div>
   )
 }
 
-function PlayerStrip({
-  who, icon, name, tableauCount, sanctuaryCount, mine = false,
+/** Very thin single-row status strip. */
+function CompactStrip({
+  side, name, icon, hand, sanctuaries,
 }: {
-  who: string
-  icon: string
+  side: 'me' | 'foe'
   name: string
-  tableauCount: number
-  sanctuaryCount: number
-  mine?: boolean
+  icon: string
+  hand: number
+  sanctuaries: number
 }) {
+  const tint = side === 'me'
+    ? 'bg-sunset/8 border-sunset/30'
+    : 'bg-mist-blue/8 border-mist-blue/30'
   return (
-    <div className={`flex items-center gap-2 px-4 py-2 border-y ${mine ? 'border-sunset/40 bg-sunset/5' : 'border-mist-blue/20 bg-mist-blue/5'}`}>
-      <span className="text-lg">{icon}</span>
-      <div className="min-w-0">
-        <div className="font-serif italic text-sm text-night-indigo leading-none">{name}</div>
-        <div className="font-mono text-[9px] tracking-widest text-earth-brown uppercase mt-0.5">{who}</div>
+    <div className={`flex items-center gap-2 px-2 py-1 border rounded-md ${tint}`}>
+      <span className="text-base">{icon}</span>
+      <span className="font-serif italic text-sm text-night-indigo min-w-0 truncate">{name}</span>
+      <div className="ml-auto flex items-center gap-3">
+        <StatMini label="손패" value={hand} />
+        <StatMini label="성소" value={sanctuaries} color="text-gold" />
       </div>
-      <div className="ml-auto flex gap-2">
-        <div className="text-center">
-          <div className="font-display text-lg text-night-indigo leading-none">{tableauCount}</div>
-          <div className="font-mono text-[8px] tracking-widest text-earth-brown uppercase">여정</div>
-        </div>
-        <div className="text-center">
-          <div className="font-display text-lg text-gold leading-none">{sanctuaryCount}</div>
-          <div className="font-mono text-[8px] tracking-widest text-earth-brown uppercase">성소</div>
-        </div>
-      </div>
+    </div>
+  )
+}
+
+function StatMini({ label, value, color = 'text-night-indigo' }: { label: string; value: number; color?: string }) {
+  return (
+    <div className="flex items-center gap-1">
+      <span className="font-mono text-[9px] tracking-widest text-earth-brown uppercase">{label}</span>
+      <span className={`font-display text-base leading-none ${color}`}>{value}</span>
     </div>
   )
 }
@@ -189,27 +161,31 @@ function RoundDots({ current, total }: { current: number; total: number }) {
   return (
     <div className="flex items-center gap-1">
       {Array.from({ length: total }).map((_, i) => (
-        <span key={i}
-              className={`w-1.5 h-1.5 rounded-full ${i < current ? 'bg-sunset' : 'bg-earth-brown/25'}`} />
+        <span key={i} className={`w-1.5 h-1.5 rounded-full ${i < current ? 'bg-sunset' : 'bg-earth-brown/25'}`} />
       ))}
     </div>
   )
 }
 
 function TableauStrip({
-  tableau, label, mini = false,
+  tableau, label, size, mine = false,
 }: {
   tableau: readonly RegionCard[]
   label: string
-  mini?: boolean
+  size: 'xs' | 'sm'
+  mine?: boolean
 }) {
-  const size = mini ? 'xs' : 'sm'
   return (
-    <div className="px-3 py-2">
-      <div className="font-mono text-[9px] tracking-widest text-earth-brown uppercase mb-1">
-        {label} · {tableau.length}/8
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <span className="font-mono text-[9px] tracking-widest text-earth-brown uppercase">
+          {label}
+        </span>
+        <span className="font-mono text-[9px] tracking-widest text-earth-brown">
+          {tableau.length}/8 {mine && '→ 오른쪽부터 채점'}
+        </span>
       </div>
-      <div className="flex gap-1 overflow-x-auto">
+      <div className="flex gap-1 overflow-x-auto pb-1">
         {Array.from({ length: 8 }).map((_, i) => {
           const card = tableau[i]
           if (card) {
@@ -217,15 +193,16 @@ function TableauStrip({
               <motion.div key={`${card.id}-${i}`}
                           initial={{ y: -20, opacity: 0, rotateY: 90 }}
                           animate={{ y: 0, opacity: 1, rotateY: 0 }}
-                          transition={{ type: 'spring', damping: 16, stiffness: 240 }}>
+                          transition={{ type: 'spring', damping: 16, stiffness: 240 }}
+                          className="shrink-0">
                 <RegionCardView card={card} size={size} />
               </motion.div>
             )
           }
+          const w = size === 'xs' ? 'w-[70px] h-[105px]' : 'w-[92px] h-[138px]'
           return (
             <div key={i}
-                 className={`${mini ? 'w-[70px] h-[100px]' : 'w-[86px] h-[124px]'}
-                             border-2 border-dashed border-earth-brown/30 rounded-lg
+                 className={`shrink-0 ${w} border-2 border-dashed border-earth-brown/30 rounded-lg
                              flex items-center justify-center font-mono text-[9px] text-earth-brown/40 uppercase`}>
               {i + 1}
             </div>
@@ -236,26 +213,72 @@ function TableauStrip({
   )
 }
 
+function PlayComparison({ humanNum, botNum }: { humanNum: number; botNum: number }) {
+  const humanFirst = humanNum <= botNum
+  return (
+    <div className="flex items-center gap-2 justify-center font-mono text-[11px] text-earth-brown">
+      <span className={humanFirst ? 'text-sunset-deep font-bold' : ''}>
+        나 <span className="font-display text-lg">{humanNum}</span>
+      </span>
+      <span className="opacity-60">vs</span>
+      <span className={!humanFirst ? 'text-sunset-deep font-bold' : ''}>
+        상대 <span className="font-display text-lg">{botNum}</span>
+      </span>
+      <span className="ml-2 text-[9px] tracking-widest uppercase text-earth-brown">
+        {humanFirst ? '내가 먼저' : '상대 먼저'}
+      </span>
+    </div>
+  )
+}
+
+function SelectPhase({
+  hand, onPick,
+}: {
+  hand: readonly RegionCard[]
+  onPick: (c: RegionCard) => void
+}) {
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div className="font-serif italic text-mist-blue text-center">
+        손패 3장 중 <span className="text-sunset-deep">1장을 탭</span>하세요
+      </div>
+      <div className="flex justify-center gap-2">
+        <AnimatePresence>
+          {hand.map((c) => (
+            <motion.div key={c.id}
+                        layout
+                        initial={{ y: 40, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        exit={{ y: -40, opacity: 0, scale: 0.6 }}
+                        transition={{ type: 'spring', damping: 18, stiffness: 240 }}>
+              <RegionCardView card={c} size="md" onClick={() => onPick(c)} />
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+    </div>
+  )
+}
+
 function DrawPanel({
-  state, pickedSanctuary, setPickedSanctuary, onPick, eligibleForSanctuary,
+  state, pickedSanctuary, setPickedSanctuary, onPick, eligibleForSanctuary, humanHand,
 }: {
   state: { regionMarket: readonly RegionCard[]; sanctuaryMarket: readonly SanctuaryCard[] }
   pickedSanctuary: number | null
   setPickedSanctuary: (id: number | null) => void
   onPick: (region: RegionCard, sanctuaryId: number | null) => void
   eligibleForSanctuary: boolean
+  humanHand: readonly RegionCard[]
 }) {
   return (
-    <div className="flex flex-col gap-4 items-stretch">
-      {/* Phase heading — what am I doing right now */}
+    <div className="flex flex-col gap-3">
+
+      {/* Explainer */}
       <div className="text-center">
-        <div className="font-serif italic text-lg text-night-indigo">
-          🎴 손패 보충
-        </div>
-        <div className="font-mono text-[10px] text-earth-brown mt-1 leading-relaxed">
-          방금 낸 카드만큼 손패가 줄었어요.<br/>
-          <span className="text-sunset-deep font-bold">아래 3장 중 1장</span>을 골라 손패로 가져오세요.<br/>
-          <span className="text-mist-blue">이 카드가 다음 라운드에 낼 후보가 됩니다.</span>
+        <div className="font-serif italic text-base text-night-indigo">🎴 손패 보충</div>
+        <div className="font-mono text-[10px] text-earth-brown mt-0.5 leading-relaxed">
+          방금 카드 냈으니 손패 <span className="font-display text-sm">{humanHand.length}</span>장 →
+          아래 <span className="text-sunset-deep font-bold">1장 골라 손패 3장으로 채우기</span>
         </div>
       </div>
 
@@ -264,18 +287,18 @@ function DrawPanel({
         <div>
           <div className="text-center mb-1.5">
             <div className="font-mono text-[10px] tracking-widest text-gold uppercase font-bold">
-              ✦ 보너스: 성소 카드 접근권
+              ✦ 보너스: 성소 카드 획득 가능
             </div>
-            <div className="font-mono text-[9px] text-earth-brown mt-0.5">
-              직전보다 큰 번호를 냈으니 성소 1장 무료로 획득 (스킵도 가능)
+            <div className="font-mono text-[9px] text-earth-brown">
+              직전보다 큰 번호 냈음 · 아래 성소 1장 무료 (원하는 것만 · 스킵 가능)
             </div>
           </div>
-          <div className="flex justify-center gap-2">
+          <div className="flex justify-center gap-1.5 flex-wrap">
             {state.sanctuaryMarket.map((s) => (
               <button
                 key={s.id}
                 onClick={() => setPickedSanctuary(pickedSanctuary === s.id ? null : s.id)}
-                className={`text-left px-2 py-1.5 rounded-md border-2 text-[10px] max-w-[110px]
+                className={`text-left px-2 py-1.5 rounded-md border-2 max-w-[110px]
                             ${pickedSanctuary === s.id
                               ? 'border-gold bg-gold/15 -translate-y-0.5'
                               : 'border-night-indigo/40 bg-night-indigo/5'}
@@ -286,25 +309,20 @@ function DrawPanel({
               </button>
             ))}
           </div>
-          {pickedSanctuary !== null && (
-            <div className="text-center mt-1 font-mono text-[9px] text-gold">
-              ✓ 선택됨 · 아래 지역 카드 뽑을 때 함께 획득
-            </div>
-          )}
         </div>
       )}
 
-      {/* Region market picker */}
+      {/* Region market */}
       <div>
         <div className="text-center mb-1.5">
           <div className="font-mono text-[10px] tracking-widest text-sunset-deep uppercase font-bold">
-            ⬇ 지역 카드 3장 중 1장 고르기 (필수)
+            ⬇ 지역 카드 3장 중 1장 (필수)
           </div>
-          <div className="font-mono text-[9px] text-earth-brown mt-0.5">
-            탭하면 즉시 손패에 들어가고 라운드 종료
+          <div className="font-mono text-[9px] text-earth-brown">
+            탭 → 손패로 · 다음 라운드에 낼 수 있음
           </div>
         </div>
-        <div className="flex justify-center gap-2">
+        <div className="flex justify-center gap-2 flex-wrap">
           {state.regionMarket.map((c) => (
             <button
               key={c.id}
@@ -316,9 +334,27 @@ function DrawPanel({
           ))}
         </div>
       </div>
+
+      {/* Current hand snapshot */}
+      <div>
+        <div className="text-center font-mono text-[9px] tracking-widest text-earth-brown uppercase mb-1">
+          현재 내 손패 · {humanHand.length}/3
+        </div>
+        <div className="flex justify-center gap-1.5 items-center">
+          {humanHand.map((c) => (
+            <RegionCardView key={c.id} card={c} size="xs" dim />
+          ))}
+          <div className="flex items-center gap-1">
+            <span className="font-display text-xl text-sunset animate-pulse">+</span>
+            <div className="w-[70px] h-[105px] border-2 border-dashed border-sunset rounded-lg
+                            flex items-center justify-center text-center px-2 bg-sunset/5">
+              <div className="font-mono text-[8px] tracking-widest text-sunset-deep uppercase">
+                뽑는 카드<br/>여기로
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
-
-// Suppress unused-var TS complaint for icon table.
-void ICON_EMOJI
