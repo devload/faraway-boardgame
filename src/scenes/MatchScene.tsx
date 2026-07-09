@@ -335,21 +335,21 @@ function DrawPanel({
         </div>
       </div>
 
-      {/* Current hand snapshot */}
+      {/* Current hand snapshot — sm size so condition/reward icons are legible */}
       <div>
         <div className="text-center font-mono text-[9px] tracking-widest text-earth-brown uppercase mb-1">
-          현재 내 손패 · {humanHand.length}/3
+          현재 내 손패 · {humanHand.length}장 (조건/보상 확인용)
         </div>
-        <div className="flex justify-center gap-1.5 items-center">
+        <div className="flex justify-center gap-1.5 items-center flex-wrap">
           {humanHand.map((c) => (
-            <RegionCardView key={c.id} card={c} size="xs" dim />
+            <RegionCardView key={c.id} card={c} size="sm" dim />
           ))}
           <div className="flex items-center gap-1">
             <span className="font-display text-xl text-sunset animate-pulse">+</span>
-            <div className="w-[70px] h-[105px] border-2 border-dashed border-sunset rounded-lg
+            <div className="w-[92px] h-[138px] border-2 border-dashed border-sunset rounded-lg
                             flex items-center justify-center text-center px-2 bg-sunset/5">
-              <div className="font-mono text-[8px] tracking-widest text-sunset-deep uppercase">
-                뽑는 카드<br/>여기로
+              <div className="font-mono text-[9px] tracking-widest text-sunset-deep uppercase leading-relaxed">
+                뽑는<br/>카드<br/>여기로
               </div>
             </div>
           </div>

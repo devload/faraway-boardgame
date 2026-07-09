@@ -292,38 +292,59 @@ function TableauReveal({
               </div>
             </div>
 
-            {/* Icon-by-icon comparison table. Shows every required icon type
-                with need-count vs found-count, colored per success. */}
+            {/* Icon-by-icon comparison. One row per required icon type:
+                [🌙 ×2 필요] → [🌙🌙🌙 있음] [✓] — never wraps because
+                the row is a flex line and the "found" cell truncates
+                gracefully with a `+N` overflow indicator on huge counts. */}
             {Object.keys(currentEntry.card.requirement).length > 0 && (
-              <div className="grid grid-cols-[auto_1fr_auto] gap-x-3 gap-y-1 text-[11px]">
+              <div className="flex flex-col gap-1.5">
                 {Object.entries(currentEntry.card.requirement).map(([icon, need]) => {
                   const found = currentEntry.leftIcons[icon as keyof typeof currentEntry.leftIcons] ?? 0
                   const met = found >= (need ?? 0)
+                  const maxVisible = 5
+                  const emoji = ICON_EMOJI[icon as keyof typeof ICON_EMOJI]
                   return (
-                    <div key={icon} className="col-span-3 grid grid-cols-subgrid items-center gap-x-3">
-                      <span className="font-mono text-earth-brown">필요</span>
-                      <div className="flex items-center gap-1.5">
-                        <span className="emoji text-lg">{ICON_EMOJI[icon as keyof typeof ICON_EMOJI]}</span>
+                    <div
+                      key={icon}
+                      className={`flex items-center gap-2 py-1 px-2 rounded
+                                  ${met ? 'bg-gold/10' : 'bg-earth-brown/5'}`}
+                    >
+                      {/* Need */}
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="emoji text-lg leading-none">{emoji}</span>
                         <span className="font-display text-sm text-night-indigo">×{need}</span>
-                        <span className="mx-1 text-earth-brown">vs</span>
-                        <span className="font-mono text-earth-brown">왼쪽</span>
-                        <div className="flex gap-0.5 emoji">
-                          {Array.from({ length: Math.min(found, 6) }).map((_, i) => (
-                            <motion.span
-                              key={i}
-                              initial={{ opacity: 0, y: -4, scale: 0.5 }}
-                              animate={{ opacity: 1, y: 0, scale: 1 }}
-                              transition={{ delay: 0.15 * i, duration: 0.3 }}
-                              className="text-lg leading-none"
-                            >
-                              {ICON_EMOJI[icon as keyof typeof ICON_EMOJI]}
-                            </motion.span>
-                          ))}
-                          {found === 0 && <span className="text-earth-brown">없음</span>}
-                          {found > 6 && <span className="font-mono text-earth-brown">+{found - 6}</span>}
-                        </div>
                       </div>
-                      <span className={`font-mono text-[10px] font-bold ${met ? 'text-gold' : 'text-earth-brown'}`}>
+
+                      <span className="font-mono text-[9px] text-earth-brown shrink-0 uppercase">필요</span>
+                      <span className="text-earth-brown shrink-0">→</span>
+
+                      {/* Found — icons animate in one by one so player can watch */}
+                      <div className="flex-1 min-w-0 flex items-center gap-0.5 emoji flex-wrap">
+                        {found === 0 ? (
+                          <span className="font-mono text-[10px] text-earth-brown">왼쪽에 없음</span>
+                        ) : (
+                          <>
+                            {Array.from({ length: Math.min(found, maxVisible) }).map((_, i) => (
+                              <motion.span
+                                key={i}
+                                initial={{ opacity: 0, y: -4, scale: 0.5 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                transition={{ delay: 0.12 * i, duration: 0.3 }}
+                                className="text-base leading-none"
+                              >
+                                {emoji}
+                              </motion.span>
+                            ))}
+                            {found > maxVisible && (
+                              <span className="font-mono text-[10px] text-earth-brown ml-1">+{found - maxVisible}</span>
+                            )}
+                          </>
+                        )}
+                      </div>
+
+                      {/* Verdict */}
+                      <span className={`font-mono text-sm font-bold shrink-0
+                                       ${met ? 'text-gold' : 'text-earth-brown'}`}>
                         {met ? '✓' : '✗'}
                       </span>
                     </div>
