@@ -58,7 +58,7 @@ export function RegionCardView({
       <div className={`flex-1 rounded-md ${bg} flex items-center justify-center text-2xl relative overflow-hidden`}
            style={{ filter: 'drop-shadow(0 2px 4px rgba(45,36,56,0.15))' }}>
         <div className="absolute inset-0 bg-gradient-to-br from-white/25 via-transparent to-transparent pointer-events-none" />
-        <span className="relative">{ILLUSTRATION_EMOJI[card.illustration]}</span>
+        <span className="relative emoji">{ILLUSTRATION_EMOJI[card.illustration]}</span>
       </div>
 
       {/* Name */}
@@ -71,7 +71,7 @@ export function RegionCardView({
         /* Compact: icons only, single-row inline, still readable at xs/sm */
         <div className="border-t border-earth-brown/25 pt-1 flex flex-col gap-0.5">
           <div className="flex items-center justify-between text-[9px] leading-none">
-            <span className="text-earth-brown font-mono">
+            <span className="text-earth-brown font-mono emoji">
               {hasReq
                 ? Object.entries(card.requirement).map(([icon, n]) => `${ICON_EMOJI[icon as keyof typeof ICON_EMOJI]}${n}`).join('')
                 : ''}
@@ -81,7 +81,7 @@ export function RegionCardView({
               +{card.points}
             </span>
           </div>
-          <div className="text-[10px] text-center leading-none text-mist-blue">
+          <div className="text-[10px] text-center leading-none text-mist-blue emoji">
             {card.rewards.length === 0 ? '' : '↳ ' + card.rewards.map((r) => ICON_EMOJI[r]).join('')}
           </div>
         </div>
@@ -92,7 +92,7 @@ export function RegionCardView({
             <span className="font-mono text-earth-brown tracking-widest">
               {hasReq ? '조건' : '기본'}
             </span>
-            <span className="text-earth-brown">
+            <span className="text-earth-brown emoji">
               {hasReq
                 ? Object.entries(card.requirement).map(([icon, n]) => `${ICON_EMOJI[icon as keyof typeof ICON_EMOJI]}×${n}`).join(' ')
                 : '—'}
@@ -104,7 +104,7 @@ export function RegionCardView({
           </div>
           <div className="flex items-center justify-between text-[10px]">
             <span className="font-mono text-moss-green tracking-widest">보상</span>
-            <span className="text-mist-blue">
+            <span className="text-mist-blue emoji">
               {card.rewards.length === 0 ? '—' : card.rewards.map((r) => ICON_EMOJI[r]).join(' ')}
             </span>
           </div>
