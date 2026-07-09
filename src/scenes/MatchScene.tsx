@@ -282,32 +282,58 @@ function DrawPanel({
         </div>
       </div>
 
-      {/* Sanctuary picker */}
-      {eligibleForSanctuary && state.sanctuaryMarket.length > 0 && (
-        <div>
-          <div className="text-center mb-1.5">
-            <div className="font-mono text-[10px] tracking-widest text-gold uppercase font-bold">
-              ✦ 보너스: 성소 카드 획득 가능
+      {/* Sanctuary status — ALWAYS visible during draw so the player learns
+          when they do/don't have access. If eligible + market has cards,
+          it's a full picker. If not eligible, it's a short explanation
+          of why. If eligible but market empty, an explicit note. */}
+      {eligibleForSanctuary && state.sanctuaryMarket.length > 0 ? (
+        <div className="border-2 border-gold rounded-lg bg-gold/8 p-3 shadow-[0_0_16px_rgba(212,165,116,0.15)]">
+          <div className="text-center mb-2">
+            <div className="font-display text-lg text-gold tracking-widest font-bold"
+                 style={{ textShadow: '0 0 8px rgba(212,165,116,0.6)' }}>
+              ✦ 성소 카드 획득 기회
             </div>
-            <div className="font-mono text-[9px] text-earth-brown">
-              직전보다 큰 번호 냈음 · 아래 성소 1장 무료 (원하는 것만 · 스킵 가능)
+            <div className="font-mono text-[10px] text-earth-brown mt-1">
+              직전보다 큰 번호를 냈어요! <span className="text-gold font-bold">1장 골라서 지역 카드 뽑기</span>
             </div>
+            {pickedSanctuary === null ? (
+              <div className="mt-1.5 font-mono text-[9px] text-sunset-deep font-bold animate-pulse uppercase">
+                ⬇ 성소 하나를 먼저 탭하세요 (안 고르면 스킵)
+              </div>
+            ) : (
+              <div className="mt-1.5 font-mono text-[9px] text-gold font-bold uppercase">
+                ✓ 선택됨 · 아래 지역 카드 탭하면 함께 획득
+              </div>
+            )}
           </div>
-          <div className="flex justify-center gap-1.5 flex-wrap">
+          <div className="flex justify-center gap-2 flex-wrap">
             {state.sanctuaryMarket.map((s) => (
               <button
                 key={s.id}
                 onClick={() => setPickedSanctuary(pickedSanctuary === s.id ? null : s.id)}
-                className={`text-left px-2 py-1.5 rounded-md border-2 max-w-[110px]
+                className={`text-left px-2.5 py-2 rounded-md border-2 max-w-[120px] transition-all
                             ${pickedSanctuary === s.id
-                              ? 'border-gold bg-gold/15 -translate-y-0.5'
-                              : 'border-night-indigo/40 bg-night-indigo/5'}
-                            transition-transform`}
+                              ? 'border-gold bg-gold/25 -translate-y-1 shadow-gold-glow'
+                              : 'border-earth-brown/50 bg-parch-light hover:border-gold/60 hover:-translate-y-0.5'}`}
               >
-                <div className="font-serif italic text-night-indigo text-xs leading-tight">{s.name}</div>
-                <div className="font-mono text-[8px] text-earth-brown mt-1 leading-tight">{s.description}</div>
+                <div className="font-serif italic text-night-indigo text-xs leading-tight font-semibold">
+                  {s.name}
+                </div>
+                <div className="font-mono text-[8px] text-mist-blue mt-1 leading-tight">{s.description}</div>
               </button>
             ))}
+          </div>
+        </div>
+      ) : eligibleForSanctuary ? (
+        <div className="border border-earth-brown/40 rounded bg-parch-light/60 p-2 text-center">
+          <div className="font-mono text-[10px] text-earth-brown">
+            ✦ 성소 접근권 있음 · 다만 <span className="text-sunset-deep">시장에 남은 성소가 없음</span>
+          </div>
+        </div>
+      ) : (
+        <div className="border border-earth-brown/40 rounded bg-parch-light/60 p-2 text-center">
+          <div className="font-mono text-[10px] text-earth-brown">
+            ✦ 이번엔 성소 접근 <span className="text-sunset-deep font-bold">불가</span> · <span className="opacity-70">직전보다 낮은 번호를 냈음</span>
           </div>
         </div>
       )}
