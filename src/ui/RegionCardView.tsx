@@ -68,25 +68,32 @@ export function RegionCardView({
 
       {/* Bottom info */}
       {s.showBody && (s.compact ? (
-        /* Compact: icons only, single-row inline, still readable at xs/sm */
+        /* Compact: icons only, still readable at xs/sm. Always shows a
+           reward row (even for reward-less cards) so layout is consistent
+           and the "no reward" fact is explicit rather than a blank line. */
         <div className="border-t border-earth-brown/25 pt-1 flex flex-col gap-0.5">
           <div className="flex items-center justify-between text-[9px] leading-none">
             <span className="text-earth-brown font-mono emoji">
               {hasReq
                 ? Object.entries(card.requirement).map(([icon, n]) => `${ICON_EMOJI[icon as keyof typeof ICON_EMOJI]}${n}`).join('')
-                : ''}
+                : '·'}
             </span>
             <span className="font-display text-gold font-bold text-xs leading-none"
                   style={{ textShadow: '0 0 4px rgba(212,165,116,0.55)' }}>
               +{card.points}
             </span>
           </div>
-          <div className="text-[10px] text-center leading-none text-mist-blue emoji">
-            {card.rewards.length === 0 ? '' : '↳ ' + card.rewards.map((r) => ICON_EMOJI[r]).join('')}
+          <div className={`text-[10px] text-center leading-none
+                          ${card.rewards.length === 0 ? 'text-earth-brown/60 font-mono' : 'text-mist-blue emoji'}`}>
+            {card.rewards.length === 0
+              ? '↳ 보상 없음'
+              : '↳ ' + card.rewards.map((r) => ICON_EMOJI[r]).join('')}
           </div>
         </div>
       ) : (
-        /* Full: labeled rows for md/lg */
+        /* Full: labeled rows for md/lg. Reward-less cards get a distinct
+           mono "없음" so they read as "pure scorer" (won't help future
+           cards' conditions — only exists to bank its own points). */
         <div className="border-t border-earth-brown/25 pt-1 flex flex-col gap-0.5">
           <div className="flex items-center justify-between text-[10px]">
             <span className="font-mono text-earth-brown tracking-widest">
@@ -104,8 +111,10 @@ export function RegionCardView({
           </div>
           <div className="flex items-center justify-between text-[10px]">
             <span className="font-mono text-moss-green tracking-widest">보상</span>
-            <span className="text-mist-blue emoji">
-              {card.rewards.length === 0 ? '—' : card.rewards.map((r) => ICON_EMOJI[r]).join(' ')}
+            <span className={card.rewards.length === 0
+              ? 'text-earth-brown/60 font-mono text-[9px] tracking-wider uppercase'
+              : 'text-mist-blue emoji'}>
+              {card.rewards.length === 0 ? '없음 · 순수 스코어러' : card.rewards.map((r) => ICON_EMOJI[r]).join(' ')}
             </span>
           </div>
         </div>
