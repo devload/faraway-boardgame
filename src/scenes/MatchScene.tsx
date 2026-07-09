@@ -121,11 +121,27 @@ export function MatchScene() {
           </div>
         )}
         {state.phase === 'draw' && (
-          <div className="flex justify-center gap-1.5">
-            {human.hand.map((c) => (
-              <RegionCardView key={c.id} card={c} size="sm" dim />
-            ))}
-          </div>
+          <>
+            <div className="text-center mb-1 font-mono text-[9px] tracking-widest text-earth-brown uppercase">
+              내 손패 ({human.hand.length}장) · 뽑은 카드가 여기에 합류합니다
+            </div>
+            <div className="flex justify-center gap-1.5 items-center">
+              {human.hand.map((c) => (
+                <RegionCardView key={c.id} card={c} size="sm" dim />
+              ))}
+              {/* Placeholder slot representing the incoming card */}
+              <div className="flex items-center gap-1">
+                <span className="font-display text-2xl text-sunset animate-pulse">+</span>
+                <div className="w-[86px] h-[124px] border-2 border-dashed border-sunset rounded-lg
+                                flex items-center justify-center text-center px-2
+                                bg-sunset/5">
+                  <div className="font-mono text-[8px] tracking-widest text-sunset-deep uppercase">
+                    새 카드<br/>여기로
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
         )}
       </div>
 
@@ -230,12 +246,29 @@ function DrawPanel({
   eligibleForSanctuary: boolean
 }) {
   return (
-    <div className="flex flex-col gap-3 items-stretch">
+    <div className="flex flex-col gap-4 items-stretch">
+      {/* Phase heading — what am I doing right now */}
+      <div className="text-center">
+        <div className="font-serif italic text-lg text-night-indigo">
+          🎴 손패 보충
+        </div>
+        <div className="font-mono text-[10px] text-earth-brown mt-1 leading-relaxed">
+          방금 낸 카드만큼 손패가 줄었어요.<br/>
+          <span className="text-sunset-deep font-bold">아래 3장 중 1장</span>을 골라 손패로 가져오세요.<br/>
+          <span className="text-mist-blue">이 카드가 다음 라운드에 낼 후보가 됩니다.</span>
+        </div>
+      </div>
+
       {/* Sanctuary picker */}
       {eligibleForSanctuary && state.sanctuaryMarket.length > 0 && (
         <div>
-          <div className="font-mono text-[9px] tracking-widest text-gold uppercase mb-1 text-center">
-            ✦ 성소 접근권 · 하나 선택 (스킵 가능)
+          <div className="text-center mb-1.5">
+            <div className="font-mono text-[10px] tracking-widest text-gold uppercase font-bold">
+              ✦ 보너스: 성소 카드 접근권
+            </div>
+            <div className="font-mono text-[9px] text-earth-brown mt-0.5">
+              직전보다 큰 번호를 냈으니 성소 1장 무료로 획득 (스킵도 가능)
+            </div>
           </div>
           <div className="flex justify-center gap-2">
             {state.sanctuaryMarket.map((s) => (
@@ -253,13 +286,23 @@ function DrawPanel({
               </button>
             ))}
           </div>
+          {pickedSanctuary !== null && (
+            <div className="text-center mt-1 font-mono text-[9px] text-gold">
+              ✓ 선택됨 · 아래 지역 카드 뽑을 때 함께 획득
+            </div>
+          )}
         </div>
       )}
 
       {/* Region market picker */}
       <div>
-        <div className="font-mono text-[9px] tracking-widest text-earth-brown uppercase mb-1 text-center">
-          지역 시장 · 하나 뽑기 (필수)
+        <div className="text-center mb-1.5">
+          <div className="font-mono text-[10px] tracking-widest text-sunset-deep uppercase font-bold">
+            ⬇ 지역 카드 3장 중 1장 고르기 (필수)
+          </div>
+          <div className="font-mono text-[9px] text-earth-brown mt-0.5">
+            탭하면 즉시 손패에 들어가고 라운드 종료
+          </div>
         </div>
         <div className="flex justify-center gap-2">
           {state.regionMarket.map((c) => (
@@ -268,7 +311,7 @@ function DrawPanel({
               onClick={() => onPick(c, eligibleForSanctuary ? pickedSanctuary : null)}
               className="hover:-translate-y-1 transition-transform"
             >
-              <RegionCardView card={c} size="sm" />
+              <RegionCardView card={c} size="md" />
             </button>
           ))}
         </div>
