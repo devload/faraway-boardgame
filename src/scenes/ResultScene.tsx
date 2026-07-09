@@ -32,32 +32,51 @@ export function ResultScene() {
   }, [state])
 
   const humanTableauLen = state?.players.human.tableau.length ?? 0
-  const totalReveals = humanTableauLen // scan right-to-left
+  const humanSanctLen = state?.players.human.sanctuaries.length ?? 0
+  const botSanctLen = state?.players.bot.sanctuaries.length ?? 0
+  const maxSanctLen = Math.max(humanSanctLen, botSanctLen)
+  const totalReveals = humanTableauLen + maxSanctLen
 
   useEffect(() => {
     if (!scores) return
     if (revealedCount >= totalReveals) return
-    // Slower pacing so the player can actually watch each card's condition
-    // check happen instead of numbers just jumping.
-    const t = setTimeout(() => setRevealedCount((c) => c + 1), 1600)
+    // Slower pacing on tableau reveal so condition checks read; sanctuary
+    // reveals are shorter — they just need to land a number.
+    const isTableauStep = revealedCount < humanTableauLen
+    const delay = isTableauStep ? 1600 : 1100
+    const t = setTimeout(() => setRevealedCount((c) => c + 1), delay)
     return () => clearTimeout(t)
-  }, [revealedCount, totalReveals, scores])
+  }, [revealedCount, totalReveals, humanTableauLen, scores])
 
   if (!state || !scores) return null
 
-  // Running totals — count up card-by-card as scoring walks right→left.
-  const runningRegionHuman = scores.human.entries
-    .slice(0, revealedCount)
-    .reduce((sum, e) => sum + e.earned, 0)
+  // Split revealedCount across the two phases:
+  //   0..humanTableauLen          → tableau (right-to-left)
+  //   humanTableauLen..totalReveals → sanctuary (one at a time)
+  const tableauRevealed = Math.min(revealedCount, humanTableauLen)
+  const sanctStep = Math.max(0, revealedCount - humanTableauLen)
+  const inSanctPhase = revealedCount >= humanTableauLen && maxSanctLen > 0
   const done = revealedCount >= totalReveals
-  const runningSanctuaryHuman = done ? scores.human.sanctuaryScore : 0
-  const humanTotal = runningRegionHuman + runningSanctuaryHuman
 
-  // Bot's running score matches the human's tempo — same revealedCount.
-  const runningRegionBot = scores.bot.entries
-    .slice(0, revealedCount)
+  // Running region scores tick per tableau reveal step.
+  const runningRegionHuman = scores.human.entries
+    .slice(0, tableauRevealed)
     .reduce((sum, e) => sum + e.earned, 0)
-  const runningSanctuaryBot = done ? scores.bot.sanctuaryScore : 0
+  const runningRegionBot = scores.bot.entries
+    .slice(0, tableauRevealed)
+    .reduce((sum, e) => sum + e.earned, 0)
+
+  // Running sanctuary scores tick per sanctuary reveal step.
+  const humanSancts = state.players.human.sanctuaries
+  const botSancts = state.players.bot.sanctuaries
+  const runningSanctuaryHuman = humanSancts
+    .slice(0, sanctStep)
+    .reduce((sum, s) => sum + s.scoreFn(state.players.human.tableau, humanSancts), 0)
+  const runningSanctuaryBot = botSancts
+    .slice(0, sanctStep)
+    .reduce((sum, s) => sum + s.scoreFn(state.players.bot.tableau, botSancts), 0)
+
+  const humanTotal = runningRegionHuman + runningSanctuaryHuman
   const botTotal = runningRegionBot + runningSanctuaryBot
 
   const humanWon = humanTotal > botTotal
@@ -68,7 +87,11 @@ export function ResultScene() {
       <div className="flex justify-between items-center pt-4 pb-2">
         <Chip variant="sunset" size="xs">RESULT</Chip>
         <div className="font-mono text-[10px] tracking-[0.2em] text-earth-brown uppercase">
-          // {done ? 'FINAL' : `SCORING… ${revealedCount}/${totalReveals}`}
+          {done
+            ? '// FINAL'
+            : inSanctPhase
+              ? `// SANCTUARY ${sanctStep}/${maxSanctLen}`
+              : `// TABLEAU ${tableauRevealed}/${humanTableauLen}`}
         </div>
       </div>
 
@@ -94,12 +117,12 @@ export function ResultScene() {
       {/* Bot tableau — compact right-to-left reveal in sync */}
       <div className="mt-4">
         <div className="font-mono text-[9px] tracking-widest text-mist-blue uppercase mb-1">
-          상대의 여정 · 채점 진행 중
+          상대의 여정 {inSanctPhase ? '· 완료' : '· 채점 진행 중'}
         </div>
         <TableauReveal
           tableau={state.players.bot.tableau}
           entries={scores.bot.entries}
-          revealedCount={revealedCount}
+          revealedCount={tableauRevealed}
           cardSize="xs"
           showDetail={false}
         />
@@ -108,32 +131,47 @@ export function ResultScene() {
       {/* Human tableau — full detail */}
       <div className="mt-4">
         <div className="font-mono text-[9px] tracking-widest text-sunset-deep uppercase mb-1">
-          내 여정 · 채점 상세
+          내 여정 {inSanctPhase ? '· 완료' : '· 채점 상세'}
         </div>
         <TableauReveal
           tableau={state.players.human.tableau}
           entries={scores.human.entries}
-          revealedCount={revealedCount}
+          revealedCount={tableauRevealed}
           cardSize="sm"
-          showDetail
+          showDetail={!inSanctPhase}
         />
 
-        {/* Sanctuaries */}
-        {state.players.human.sanctuaries.length > 0 && (
-          <div className="mt-2">
-            <div className="font-mono text-[9px] tracking-widest text-gold uppercase mb-1">
-              ✦ 획득한 성소
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {state.players.human.sanctuaries.map((s) => (
-                <div key={s.id} className="px-2 py-1 border border-gold/40 bg-gold/10 rounded-md">
-                  <div className="font-serif italic text-xs text-night-indigo">{s.name}</div>
-                  <div className="font-mono text-[9px] text-earth-brown">{s.description}</div>
+        {/* Sanctuary reveal — one-by-one animation once tableau phase is done. */}
+        {maxSanctLen > 0 && (
+          <div className="mt-4">
+            <div className="flex items-center justify-between mb-2">
+              <div className="font-mono text-[10px] tracking-widest text-gold uppercase font-bold">
+                ✦ 성소 카드 채점
+              </div>
+              {inSanctPhase && !done && (
+                <div className="font-mono text-[9px] text-earth-brown animate-pulse">
+                  성소 계산 중…
                 </div>
-              ))}
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <SanctuaryReveal
+                title="내 성소"
+                sanctuaries={humanSancts}
+                revealed={sanctStep}
+                tableau={state.players.human.tableau}
+                mine
+              />
+              <SanctuaryReveal
+                title={`${state.players.bot.name}의 성소`}
+                sanctuaries={botSancts}
+                revealed={sanctStep}
+                tableau={state.players.bot.tableau}
+              />
             </div>
           </div>
         )}
+
       </div>
 
       {/* Verdict */}
@@ -412,6 +450,103 @@ function ScoreCard({
         <span>지역 <span className="font-display text-xs text-night-indigo">{region}</span></span>
         <span>성소 <span className="font-display text-xs text-night-indigo">{sanctuary}</span></span>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Sanctuary reveal column — shows the player's sanctuaries stacked, each
+ * lighting up one at a time as the sanctuary reveal step advances. The
+ * currently-revealing sanctuary gets a pop animation with its point
+ * contribution rolling in.
+ */
+function SanctuaryReveal({
+  title, sanctuaries, revealed, tableau, mine = false,
+}: {
+  title: string
+  sanctuaries: readonly import('../game/types.ts').SanctuaryCard[]
+  revealed: number
+  tableau: readonly import('../game/types.ts').RegionCard[]
+  mine?: boolean
+}) {
+  const border = mine ? 'border-gold/50' : 'border-mist-blue/40'
+  return (
+    <div className={`border rounded-md p-2 ${border} bg-parch-light/50`}>
+      <div className={`font-mono text-[9px] tracking-widest uppercase mb-2
+                      ${mine ? 'text-gold' : 'text-mist-blue'}`}>
+        {title} · {sanctuaries.length}장
+      </div>
+      {sanctuaries.length === 0 ? (
+        <div className="font-mono text-[9px] text-earth-brown text-center py-4">
+          획득한 성소 없음
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          {sanctuaries.map((s, i) => {
+            const scored = i < revealed
+            const isCurrent = i === revealed - 1
+            const contribution = s.scoreFn(tableau, sanctuaries)
+            return (
+              <motion.div
+                key={s.id}
+                initial={false}
+                animate={{
+                  opacity: scored ? 1 : 0.35,
+                  scale: isCurrent ? 1.03 : 1,
+                }}
+                transition={{ duration: 0.4 }}
+                className={`relative px-2 py-1.5 rounded border transition-colors
+                            ${scored
+                              ? contribution > 0
+                                ? 'border-gold bg-gold/15'
+                                : 'border-earth-brown/40 bg-parch-warm'
+                              : 'border-earth-brown/30 bg-parch-light'}`}
+                style={isCurrent ? { boxShadow: '0 0 12px rgba(212,165,116,0.5)' } : undefined}
+              >
+                <div className="flex items-baseline justify-between gap-1">
+                  <div className="font-serif italic text-[11px] text-night-indigo font-semibold leading-tight">
+                    {s.name}
+                  </div>
+                  <AnimatePresence>
+                    {scored && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.5, y: -4 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        transition={{ type: 'spring', damping: 12, stiffness: 260 }}
+                        className={`font-display text-sm font-bold shrink-0 leading-none
+                                    ${contribution > 0 ? 'text-gold' : 'text-earth-brown'}`}
+                        style={contribution > 0 ? { textShadow: '0 0 6px rgba(212,165,116,0.6)' } : undefined}
+                      >
+                        {contribution > 0 ? `+${contribution}` : '0'}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+                <div className="font-mono text-[8px] text-earth-brown mt-0.5 leading-tight">
+                  {s.description}
+                </div>
+
+                {/* Ripple pulse when this sanctuary is scoring */}
+                <AnimatePresence>
+                  {isCurrent && (
+                    <motion.div
+                      initial={{ opacity: 0.7, scale: 0.9 }}
+                      animate={{ opacity: 0, scale: 1.5 }}
+                      transition={{ duration: 0.9, ease: 'easeOut' }}
+                      className="absolute inset-0 rounded pointer-events-none"
+                      style={{
+                        boxShadow: contribution > 0
+                          ? '0 0 0 2px #d4a574, 0 0 18px 2px rgba(212,165,116,0.55)'
+                          : '0 0 0 2px #8b6f47',
+                      }}
+                    />
+                  )}
+                </AnimatePresence>
+              </motion.div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
