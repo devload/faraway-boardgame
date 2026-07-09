@@ -53,7 +53,13 @@ export function ResultScene() {
   const runningSanctuaryHuman = done ? scores.human.sanctuaryScore : 0
   const humanTotal = runningRegionHuman + runningSanctuaryHuman
 
-  const botTotal = done ? scores.bot.total : 0
+  // Bot's running score matches the human's tempo — same revealedCount.
+  const runningRegionBot = scores.bot.entries
+    .slice(0, revealedCount)
+    .reduce((sum, e) => sum + e.earned, 0)
+  const runningSanctuaryBot = done ? scores.bot.sanctuaryScore : 0
+  const botTotal = runningRegionBot + runningSanctuaryBot
+
   const humanWon = humanTotal > botTotal
   const draw = humanTotal === botTotal
 
@@ -62,39 +68,54 @@ export function ResultScene() {
       <div className="flex justify-between items-center pt-4 pb-2">
         <Chip variant="sunset" size="xs">RESULT</Chip>
         <div className="font-mono text-[10px] tracking-[0.2em] text-earth-brown uppercase">
-          // {done ? 'FINAL' : 'SCORING…'}
+          // {done ? 'FINAL' : `SCORING… ${revealedCount}/${totalReveals}`}
         </div>
       </div>
 
-      {/* Human tableau + reveal */}
+      {/* Live scoreboard — both players' running totals side by side */}
+      <div className="grid grid-cols-2 gap-2 mt-3 mb-1">
+        <ScoreCard
+          label="내 여정"
+          total={humanTotal}
+          region={runningRegionHuman}
+          sanctuary={runningSanctuaryHuman}
+          leading={humanTotal >= botTotal}
+          mine
+        />
+        <ScoreCard
+          label={`${state.players.bot.name}의 여정`}
+          total={botTotal}
+          region={runningRegionBot}
+          sanctuary={runningSanctuaryBot}
+          leading={botTotal > humanTotal}
+        />
+      </div>
+
+      {/* Bot tableau — compact right-to-left reveal in sync */}
       <div className="mt-4">
-        <div className="flex items-baseline justify-between">
-          <div className="font-serif italic text-lg text-night-indigo">내 여정</div>
-          <div className="flex items-baseline gap-1">
-            <motion.span
-              key={humanTotal}
-              initial={{ scale: 1.4, color: '#c48b6e' }}
-              animate={{ scale: 1, color: '#d4a574' }}
-              transition={{ duration: 0.4 }}
-              className="font-display text-4xl leading-none"
-              style={{ textShadow: '0 0 12px rgba(212,165,116,0.6)' }}
-            >
-              {humanTotal}
-            </motion.span>
-            <span className="font-mono text-[10px] tracking-widest text-earth-brown">PTS</span>
-          </div>
+        <div className="font-mono text-[9px] tracking-widest text-mist-blue uppercase mb-1">
+          상대의 여정 · 채점 진행 중
         </div>
+        <TableauReveal
+          tableau={state.players.bot.tableau}
+          entries={scores.bot.entries}
+          revealedCount={revealedCount}
+          cardSize="xs"
+          showDetail={false}
+        />
+      </div>
 
-        {/* Region vs sanctuary breakdown */}
-        <div className="flex gap-3 mt-1 mb-2 font-mono text-[10px] text-earth-brown">
-          <span>지역 <span className="font-display text-sm text-night-indigo">{runningRegionHuman}</span></span>
-          <span>성소 <span className="font-display text-sm text-night-indigo">{runningSanctuaryHuman}</span></span>
+      {/* Human tableau — full detail */}
+      <div className="mt-4">
+        <div className="font-mono text-[9px] tracking-widest text-sunset-deep uppercase mb-1">
+          내 여정 · 채점 상세
         </div>
-
         <TableauReveal
           tableau={state.players.human.tableau}
           entries={scores.human.entries}
           revealedCount={revealedCount}
+          cardSize="sm"
+          showDetail
         />
 
         {/* Sanctuaries */}
@@ -113,24 +134,6 @@ export function ResultScene() {
             </div>
           </div>
         )}
-      </div>
-
-      {/* Bot summary */}
-      <div className="mt-6 p-3 bg-mist-blue/5 border border-mist-blue/20 rounded-md">
-        <div className="flex items-baseline justify-between">
-          <div className="font-serif italic text-sm text-mist-blue">
-            {state.players.bot.name}의 여정
-          </div>
-          <div className="flex items-baseline gap-1">
-            <span className="font-display text-2xl text-mist-blue leading-none">{botTotal}</span>
-            <span className="font-mono text-[9px] tracking-widest text-earth-brown">PTS</span>
-          </div>
-        </div>
-        <div className="flex gap-1 mt-2 overflow-x-auto">
-          {state.players.bot.tableau.map((c, i) => (
-            <RegionCardView key={i} card={c} size="xs" />
-          ))}
-        </div>
       </div>
 
       {/* Verdict */}
@@ -166,11 +169,15 @@ export function ResultScene() {
 }
 
 function TableauReveal({
-  tableau, entries, revealedCount,
+  tableau, entries, revealedCount, cardSize = 'sm', showDetail = true,
 }: {
   tableau: readonly import('../game/types.ts').RegionCard[]
   entries: readonly import('../game/types.ts').ScoreEntry[]
   revealedCount: number
+  /** Card thumb size — xs for the ambient bot strip, sm for the focused human strip. */
+  cardSize?: 'xs' | 'sm'
+  /** Whether to render the per-icon condition-check panel below the strip. */
+  showDetail?: boolean
 }) {
   // entries are already right-to-left. Match them by scanning tableau in reverse.
   const scoredIds = new Set(entries.slice(0, revealedCount).map((e) => e.card.id))
@@ -241,7 +248,7 @@ function TableauReveal({
               <div className={`transition-all duration-500 ${scored ? 'opacity-100' : 'opacity-40'}
                               ${highlight ? 'scale-110 -translate-y-1' : ''}`}
                    style={highlight ? { filter: 'drop-shadow(0 0 14px rgba(212,165,116,0.75))' } : undefined}>
-                <RegionCardView card={card} size="sm" />
+                <RegionCardView card={card} size={cardSize} />
               </div>
 
               {/* Success/fail pulse ring under the card that just got scored */}
@@ -265,9 +272,11 @@ function TableauReveal({
         })}
       </div>
 
-      {/* Current scoring line detail — icon-by-icon comparison */}
+      {/* Current scoring line detail — icon-by-icon comparison.
+          Rendered only when the caller opts in (main human strip); the
+          ambient bot strip skips it to keep the ceremony readable. */}
       <AnimatePresence mode="wait">
-        {currentEntry && revealedCount > 0 && revealedCount <= entries.length && (
+        {showDetail && currentEntry && revealedCount > 0 && revealedCount <= entries.length && (
           <motion.div
             key={revealedCount}
             initial={{ opacity: 0, y: 6 }}
@@ -355,6 +364,54 @@ function TableauReveal({
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  )
+}
+
+/** Live scoreboard tile — big total + region/sanctuary breakdown. */
+function ScoreCard({
+  label, total, region, sanctuary, leading, mine = false,
+}: {
+  label: string
+  total: number
+  region: number
+  sanctuary: number
+  leading: boolean
+  mine?: boolean
+}) {
+  const border = mine
+    ? 'border-sunset/60 bg-sunset/8'
+    : 'border-mist-blue/50 bg-mist-blue/8'
+  const totalColor = leading
+    ? mine ? '#d4a574' : '#4a5c6a'
+    : '#8b6f47'
+  return (
+    <div className={`relative px-3 py-2 border rounded-md ${border}
+                    ${leading ? 'ring-1 ring-gold/40' : ''}`}>
+      {leading && total > 0 && (
+        <div className="absolute -top-2 right-2 font-mono text-[8px] tracking-widest uppercase
+                        px-1.5 py-0.5 rounded bg-gold text-night-indigo font-bold">
+          앞섬
+        </div>
+      )}
+      <div className="font-serif italic text-xs text-mist-blue truncate">{label}</div>
+      <div className="flex items-baseline gap-1 mt-0.5">
+        <motion.span
+          key={total}
+          initial={{ scale: 1.4, opacity: 0.6 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ duration: 0.35 }}
+          className="font-display text-3xl leading-none"
+          style={{ color: totalColor, textShadow: leading ? '0 0 10px rgba(212,165,116,0.6)' : undefined }}
+        >
+          {total}
+        </motion.span>
+        <span className="font-mono text-[9px] tracking-widest text-earth-brown">PTS</span>
+      </div>
+      <div className="flex gap-2 mt-1 font-mono text-[9px] text-earth-brown">
+        <span>지역 <span className="font-display text-xs text-night-indigo">{region}</span></span>
+        <span>성소 <span className="font-display text-xs text-night-indigo">{sanctuary}</span></span>
+      </div>
     </div>
   )
 }
