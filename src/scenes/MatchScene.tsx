@@ -178,7 +178,8 @@ function TableauStrip({
   return (
     <div>
       <div className="flex items-center justify-between mb-1">
-        <span className="font-mono text-[9px] tracking-widest text-earth-brown uppercase">
+        <span className="flex items-center gap-1.5 font-mono text-[9px] tracking-widest text-earth-brown uppercase">
+          <span className="text-sunset-deep opacity-60">✦</span>
           {label}
         </span>
         <span className="font-mono text-[9px] tracking-widest text-earth-brown">

@@ -2,18 +2,25 @@ import type { RegionCard } from '../game/types.ts'
 import { ICON_EMOJI, ILLUSTRATION_EMOJI } from '../game/types.ts'
 
 const SIZE = {
-  xs:  { box: 'w-[70px]',  num: 'text-lg',   name: 'text-[9px]',  h: 'h-[105px]', showBody: true,  compact: true  },
-  sm:  { box: 'w-[92px]',  num: 'text-xl',   name: 'text-[10px]', h: 'h-[138px]', showBody: true,  compact: true  },
-  md:  { box: 'w-[110px]', num: 'text-3xl',  name: 'text-[11px]', h: 'h-[168px]', showBody: true,  compact: false },
-  lg:  { box: 'w-[160px]', num: 'text-5xl',  name: 'text-[14px]', h: 'h-[240px]', showBody: true,  compact: false },
+  xs:  { box: 'w-[70px]',  num: 'text-lg',   name: 'text-[9px]',  h: 'h-[105px]', showBody: true,  compact: true,  illustEm: '20px' },
+  sm:  { box: 'w-[92px]',  num: 'text-xl',   name: 'text-[10px]', h: 'h-[138px]', showBody: true,  compact: true,  illustEm: '26px' },
+  md:  { box: 'w-[110px]', num: 'text-3xl',  name: 'text-[11px]', h: 'h-[168px]', showBody: true,  compact: false, illustEm: '30px' },
+  lg:  { box: 'w-[160px]', num: 'text-5xl',  name: 'text-[14px]', h: 'h-[240px]', showBody: true,  compact: false, illustEm: '44px' },
 } as const
 
+/**
+ * Painterly illustration backdrops per region type. Uses opaque multi-stop
+ * gradients that mirror the mockup vibe: dramatic sunsets for mountains,
+ * ocean-to-gold for water, lush greens for forest, coral roses for flower,
+ * misty stone tones for ruin. Opacity is 1.0 so the cream parchment
+ * doesn't bleed through and mute the palette.
+ */
 const ILLUSTRATION_BG: Record<RegionCard['illustration'], string> = {
-  mountain: 'bg-gradient-to-br from-indigo-300/40 via-sunset/50 to-gold',
-  water:    'bg-gradient-to-br from-sky-500/60 via-mist-soft/60 to-gold/70',
-  forest:   'bg-gradient-to-br from-emerald-700/50 via-moss-green/70 to-moss-light',
-  flower:   'bg-gradient-to-br from-rose-300/60 via-sunset-soft/70 to-gold',
-  ruin:     'bg-gradient-to-br from-mist-blue/60 via-earth-brown/60 to-earth-light',
+  mountain: 'linear-gradient(155deg, #7c6ba8 0%, #b58ba4 32%, #c48b6e 62%, #d4a574 100%)',
+  water:    'linear-gradient(155deg, #4a7ba8 0%, #6ba3c8 40%, #b3c9d4 70%, #d4a574 100%)',
+  forest:   'linear-gradient(155deg, #3a5b48 0%, #6b8e5a 40%, #88a065 70%, #a5bd80 100%)',
+  flower:   'linear-gradient(155deg, #c48b95 0%, #d9a68a 40%, #f0c8a8 70%, #ffd7a8 100%)',
+  ruin:     'linear-gradient(155deg, #4a5c6a 0%, #6b7d8c 32%, #8b6f47 65%, #b8946b 100%)',
 }
 
 /**
@@ -54,16 +61,33 @@ export function RegionCardView({
         {card.id}
       </div>
 
-      {/* Illustration */}
-      <div className={`flex-1 rounded-md ${bg} flex items-center justify-center text-2xl relative overflow-hidden`}
-           style={{ filter: 'drop-shadow(0 2px 4px rgba(45,36,56,0.15))' }}>
-        <div className="absolute inset-0 bg-gradient-to-br from-white/25 via-transparent to-transparent pointer-events-none" />
-        <span className="relative emoji">{ILLUSTRATION_EMOJI[card.illustration]}</span>
+      {/* Illustration — painterly gradient with soft top-left sheen and
+          bottom vignette to give the emoji a bit of depth. */}
+      <div className="flex-1 rounded-md flex items-center justify-center relative overflow-hidden"
+           style={{
+             background: bg,
+             filter: 'drop-shadow(0 2px 4px rgba(45,36,56,0.15))',
+           }}>
+        <div className="absolute inset-0 bg-gradient-to-br from-white/30 via-transparent to-transparent pointer-events-none" />
+        <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/15 to-transparent pointer-events-none" />
+        <span className="relative emoji" style={{
+          fontSize: s.illustEm,
+          filter: 'drop-shadow(0 1px 2px rgba(45,36,56,0.3))',
+        }}>
+          {ILLUSTRATION_EMOJI[card.illustration]}
+        </span>
       </div>
 
-      {/* Name */}
-      <div className={`font-serif italic ${s.name} text-night-indigo text-center leading-tight`}>
-        {card.name}
+      {/* Name + optional subtitle (md/lg only — too tight at xs/sm) */}
+      <div className="text-center">
+        <div className={`font-serif italic font-semibold ${s.name} text-night-indigo leading-tight`}>
+          {card.name}
+        </div>
+        {!s.compact && card.subtitle && (
+          <div className="font-serif italic text-[9px] text-mist-blue leading-tight mt-0.5 opacity-80">
+            {card.subtitle}
+          </div>
+        )}
       </div>
 
       {/* Bottom info */}

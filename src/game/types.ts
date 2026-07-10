@@ -46,6 +46,8 @@ export type RegionCard = {
   id: number
   /** Fantasy region name in Korean. */
   name: string
+  /** Short evocative subtitle rendered under the name in italic serif. */
+  subtitle?: string
   illustration: Illustration
   /** Icons this card adds to the tableau when placed (activated immediately). */
   rewards: Icon[]

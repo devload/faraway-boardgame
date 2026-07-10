@@ -3,6 +3,7 @@ import { useUI } from './store/uiStore.ts'
 import { LobbyScene } from './scenes/LobbyScene.tsx'
 import { MatchScene } from './scenes/MatchScene.tsx'
 import { ResultScene } from './scenes/ResultScene.tsx'
+import { DustParticles } from './ui/DustParticles.tsx'
 
 /**
  * Faraway — solo mobile fan remake.
@@ -19,6 +20,9 @@ export default function App() {
 
   return (
     <div className="w-full h-full relative">
+      {/* Ambient drifting dust across every scene for atmosphere. */}
+      <DustParticles count={16} />
+
       <AnimatePresence mode="wait">
         <motion.div
           key={scene}
@@ -26,7 +30,7 @@ export default function App() {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.25 }}
-          className="absolute inset-0"
+          className="absolute inset-0 z-10"
         >
           {scene === 'lobby' && <LobbyScene />}
           {scene === 'match' && <MatchScene />}
