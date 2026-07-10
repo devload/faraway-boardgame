@@ -439,14 +439,17 @@ function RegionStep({
         )}
       </div>
 
-      <div className="flex justify-center gap-2 flex-wrap">
+      {/* Grid keeps 3 market cards on one row even on narrow phones.
+          sm (92px) × 3 = 276px + 8px gaps fits inside the DrawPanel
+          parchment on iPhone 12 mini widths. */}
+      <div className="grid grid-cols-3 gap-1 justify-items-center">
         {market.map((c) => (
           <button
             key={c.id}
             onClick={() => onPick(c)}
             className="hover:-translate-y-1 transition-transform"
           >
-            <RegionCardView card={c} size="md" />
+            <RegionCardView card={c} size="sm" />
           </button>
         ))}
       </div>
