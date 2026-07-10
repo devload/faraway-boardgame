@@ -96,19 +96,26 @@ export function RegionCardView({
            reward row (even for reward-less cards) so layout is consistent
            and the "no reward" fact is explicit rather than a blank line. */
         <div className="border-t border-earth-brown/25 pt-1 flex flex-col gap-0.5">
-          <div className="flex items-center justify-between text-[9px] leading-none">
-            <span className="text-earth-brown font-mono emoji">
+          <div className="flex items-center justify-between gap-1 leading-none">
+            <span className="flex items-center gap-0.5 min-w-0 overflow-hidden">
               {hasReq
-                ? Object.entries(card.requirement).map(([icon, n]) => `${ICON_EMOJI[icon as keyof typeof ICON_EMOJI]}${n}`).join('')
-                : '·'}
+                ? Object.entries(card.requirement).map(([icon, n]) => (
+                    <span key={icon} className="inline-flex items-baseline gap-0.5">
+                      <span className="emoji text-[11px] leading-none">
+                        {ICON_EMOJI[icon as keyof typeof ICON_EMOJI]}
+                      </span>
+                      <span className="font-mono text-earth-brown text-[9px]">{n}</span>
+                    </span>
+                  ))
+                : <span className="text-earth-brown/50 text-[10px]">·</span>}
             </span>
-            <span className="font-display text-gold font-bold text-xs leading-none"
+            <span className="font-display text-gold font-bold text-xs leading-none shrink-0"
                   style={{ textShadow: '0 0 4px rgba(212,165,116,0.55)' }}>
               +{card.points}
             </span>
           </div>
-          <div className={`text-[10px] text-center leading-none
-                          ${card.rewards.length === 0 ? 'text-earth-brown/60 font-mono' : 'text-mist-blue emoji'}`}>
+          <div className={`text-center leading-none
+                          ${card.rewards.length === 0 ? 'text-earth-brown/60 font-mono text-[9px]' : 'text-mist-blue emoji text-[11px]'}`}>
             {card.rewards.length === 0
               ? '↳ 보상 없음'
               : '↳ ' + card.rewards.map((r) => ICON_EMOJI[r]).join('')}
@@ -119,17 +126,24 @@ export function RegionCardView({
            mono "없음" so they read as "pure scorer" (won't help future
            cards' conditions — only exists to bank its own points). */
         <div className="border-t border-earth-brown/25 pt-1 flex flex-col gap-0.5">
-          {/* Condition row — every child has whitespace-nowrap + shrink-0 on
-              the fixed labels so nothing wraps vertically on narrow cards
-              (e.g. big requirements like 🐚×3 previously broke "조건"). */}
+          {/* Condition row — icons + counts split into separate spans so the
+              numbers render in a plain font (not the color-emoji font, which
+              would draw them tiny as if they were part of an emoji). */}
           <div className="flex items-center justify-between text-[10px] gap-1 min-w-0">
             <span className="font-mono text-earth-brown shrink-0 whitespace-nowrap">
               {hasReq ? '조건' : '기본'}
             </span>
-            <span className="text-earth-brown emoji whitespace-nowrap min-w-0 truncate">
+            <span className="flex items-center gap-1 min-w-0 whitespace-nowrap overflow-hidden">
               {hasReq
-                ? Object.entries(card.requirement).map(([icon, n]) => `${ICON_EMOJI[icon as keyof typeof ICON_EMOJI]}×${n}`).join(' ')
-                : '—'}
+                ? Object.entries(card.requirement).map(([icon, n]) => (
+                    <span key={icon} className="inline-flex items-baseline gap-0.5 shrink-0">
+                      <span className="emoji text-[13px] leading-none">
+                        {ICON_EMOJI[icon as keyof typeof ICON_EMOJI]}
+                      </span>
+                      <span className="font-mono text-earth-brown text-[10px]">×{n}</span>
+                    </span>
+                  ))
+                : <span className="text-earth-brown">—</span>}
             </span>
             <span className="font-display text-gold font-bold text-sm leading-none shrink-0 whitespace-nowrap"
                   style={{ textShadow: '0 0 4px rgba(212,165,116,0.55)' }}>
@@ -140,7 +154,7 @@ export function RegionCardView({
             <span className="font-mono text-moss-green shrink-0 whitespace-nowrap">보상</span>
             <span className={`whitespace-nowrap min-w-0 truncate ${card.rewards.length === 0
               ? 'text-earth-brown/60 font-mono text-[9px] uppercase'
-              : 'text-mist-blue emoji'}`}>
+              : 'text-mist-blue emoji text-[13px] leading-none'}`}>
               {card.rewards.length === 0 ? '없음' : card.rewards.map((r) => ICON_EMOJI[r]).join(' ')}
             </span>
           </div>
