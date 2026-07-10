@@ -119,26 +119,29 @@ export function RegionCardView({
            mono "없음" so they read as "pure scorer" (won't help future
            cards' conditions — only exists to bank its own points). */
         <div className="border-t border-earth-brown/25 pt-1 flex flex-col gap-0.5">
-          <div className="flex items-center justify-between text-[10px]">
-            <span className="font-mono text-earth-brown tracking-widest">
+          {/* Condition row — every child has whitespace-nowrap + shrink-0 on
+              the fixed labels so nothing wraps vertically on narrow cards
+              (e.g. big requirements like 🐚×3 previously broke "조건"). */}
+          <div className="flex items-center justify-between text-[10px] gap-1 min-w-0">
+            <span className="font-mono text-earth-brown shrink-0 whitespace-nowrap">
               {hasReq ? '조건' : '기본'}
             </span>
-            <span className="text-earth-brown emoji">
+            <span className="text-earth-brown emoji whitespace-nowrap min-w-0 truncate">
               {hasReq
                 ? Object.entries(card.requirement).map(([icon, n]) => `${ICON_EMOJI[icon as keyof typeof ICON_EMOJI]}×${n}`).join(' ')
                 : '—'}
             </span>
-            <span className="font-display text-gold font-bold text-sm leading-none"
+            <span className="font-display text-gold font-bold text-sm leading-none shrink-0 whitespace-nowrap"
                   style={{ textShadow: '0 0 4px rgba(212,165,116,0.55)' }}>
               +{card.points}
             </span>
           </div>
-          <div className="flex items-center justify-between text-[10px]">
-            <span className="font-mono text-moss-green tracking-widest">보상</span>
-            <span className={card.rewards.length === 0
-              ? 'text-earth-brown/60 font-mono text-[9px] tracking-wider uppercase'
-              : 'text-mist-blue emoji'}>
-              {card.rewards.length === 0 ? '없음 · 순수 스코어러' : card.rewards.map((r) => ICON_EMOJI[r]).join(' ')}
+          <div className="flex items-center justify-between text-[10px] gap-1 min-w-0">
+            <span className="font-mono text-moss-green shrink-0 whitespace-nowrap">보상</span>
+            <span className={`whitespace-nowrap min-w-0 truncate ${card.rewards.length === 0
+              ? 'text-earth-brown/60 font-mono text-[9px] uppercase'
+              : 'text-mist-blue emoji'}`}>
+              {card.rewards.length === 0 ? '없음' : card.rewards.map((r) => ICON_EMOJI[r]).join(' ')}
             </span>
           </div>
         </div>
