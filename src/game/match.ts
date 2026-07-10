@@ -73,7 +73,11 @@ export function fillBotSelection(state: MatchState): MatchState {
   }
 }
 
-/** Both selections in → place cards, compute draw order, advance to draw phase. */
+/** Both selections in → place cards, compute draw order, advance to draw phase.
+ *
+ *  Special case: after placing the 8th card the tableau is full and the
+ *  subsequent draw would just push a card into a hand that never gets played.
+ *  We short-circuit straight to the end phase so the ceremony can start. */
 export function revealAndPlace(state: MatchState): MatchState {
   if (state.phase !== 'select') return state
   const { human, bot } = state.selections
@@ -91,14 +95,16 @@ export function revealAndPlace(state: MatchState): MatchState {
     tableau: [...state.players.bot.tableau, bot],
   }
 
+  const isLastRound = newHuman.tableau.length >= TOTAL_ROUNDS
+
   // Draw order: lower number goes first.
   const drawOrder: PlayerId[] = human.id <= bot.id ? ['human', 'bot'] : ['bot', 'human']
 
   return {
     ...state,
     players: { ...state.players, human: newHuman, bot: newBot },
-    phase: 'draw',
-    drawOrder,
+    phase: isLastRound ? 'end' : 'draw',
+    drawOrder: isLastRound ? [] : drawOrder,
     drawIndex: 0,
   }
 }
