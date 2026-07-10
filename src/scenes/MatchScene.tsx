@@ -28,7 +28,6 @@ export function MatchScene() {
   const humanDraw = useMatch((s) => s.humanDraw)
   const progress = useMatch((s) => s.progress)
   const setScene = useUI((s) => s.setScene)
-  const [pickedSanctuary, setPickedSanctuary] = useState<number | null>(null)
 
   if (!state) return null
 
@@ -93,13 +92,9 @@ export function MatchScene() {
 
             {humanCanDraw && (
               <DrawPanel
+                key={state.round}
                 state={state}
-                pickedSanctuary={pickedSanctuary}
-                setPickedSanctuary={setPickedSanctuary}
-                onPick={(region, sanctId) => {
-                  humanDraw(region, sanctId)
-                  setPickedSanctuary(null)
-                }}
+                onPick={(region, sanctId) => humanDraw(region, sanctId)}
                 eligibleForSanctuary={hasSanctuaryAccess(state, 'human')}
                 humanHand={human.hand}
               />
@@ -261,111 +256,205 @@ function SelectPhase({
   )
 }
 
+/**
+ * DrawPanel — two-step sequential dialog:
+ *   Step 1: sanctuary check (grant / no market / not eligible → "다음")
+ *   Step 2: pick a region card (mandatory, ends the round)
+ *
+ * The parent passes a fresh instance per round via `key={state.round}`
+ * so the internal step + pick state reset automatically at round start.
+ */
 function DrawPanel({
-  state, pickedSanctuary, setPickedSanctuary, onPick, eligibleForSanctuary, humanHand,
+  state, onPick, eligibleForSanctuary, humanHand,
 }: {
   state: { regionMarket: readonly RegionCard[]; sanctuaryMarket: readonly SanctuaryCard[] }
-  pickedSanctuary: number | null
-  setPickedSanctuary: (id: number | null) => void
   onPick: (region: RegionCard, sanctuaryId: number | null) => void
   eligibleForSanctuary: boolean
   humanHand: readonly RegionCard[]
 }) {
+  const [step, setStep] = useState<'sanctuary' | 'region'>('sanctuary')
+  const [pickedSanctuary, setPickedSanctuary] = useState<number | null>(null)
+
+  const advance = () => setStep('region')
+
+  return (
+    <div className="border-2 border-earth-brown/40 rounded-xl bg-parch-light/80 p-4 shadow-parchment">
+      {/* Step indicator */}
+      <div className="flex items-center justify-center gap-2 mb-3">
+        <StepDot filled={step === 'sanctuary'} label="1 · 성소" />
+        <span className="text-earth-brown/50 text-xs">→</span>
+        <StepDot filled={step === 'region'} label="2 · 지역" />
+      </div>
+
+      {step === 'sanctuary' && (
+        <SanctuaryStep
+          eligible={eligibleForSanctuary}
+          market={state.sanctuaryMarket}
+          pickedId={pickedSanctuary}
+          onPick={setPickedSanctuary}
+          onSkip={() => { setPickedSanctuary(null); advance() }}
+          onConfirm={advance}
+        />
+      )}
+
+      {step === 'region' && (
+        <RegionStep
+          market={state.regionMarket}
+          humanHand={humanHand}
+          pickedSanctuaryId={pickedSanctuary}
+          sanctuaryMarket={state.sanctuaryMarket}
+          onPick={(region) => onPick(region, eligibleForSanctuary ? pickedSanctuary : null)}
+        />
+      )}
+    </div>
+  )
+}
+
+function StepDot({ filled, label }: { filled: boolean; label: string }) {
+  return (
+    <span className={`flex items-center gap-1.5 font-mono text-[10px] tracking-widest uppercase
+                     ${filled ? 'text-sunset-deep font-bold' : 'text-earth-brown/50'}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${filled ? 'bg-sunset' : 'bg-earth-brown/30'}`} />
+      {label}
+    </span>
+  )
+}
+
+function SanctuaryStep({
+  eligible, market, pickedId, onPick, onSkip, onConfirm,
+}: {
+  eligible: boolean
+  market: readonly SanctuaryCard[]
+  pickedId: number | null
+  onPick: (id: number | null) => void
+  onSkip: () => void
+  onConfirm: () => void
+}) {
+  // Case A — not eligible this round
+  if (!eligible) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-2">
+        <div className="text-center">
+          <div className="font-display text-lg text-earth-brown tracking-widest">
+            ✦ 성소 획득 실패
+          </div>
+          <div className="font-mono text-[10px] text-earth-brown mt-1">
+            직전 라운드보다 낮은 번호를 냈어요<br />
+            <span className="opacity-70">오름차순 유지 시 다음 기회</span>
+          </div>
+        </div>
+        <SunsetCTA size="sm" onClick={onSkip}>다음 →</SunsetCTA>
+      </div>
+    )
+  }
+
+  // Case B — eligible but sanctuary market empty
+  if (market.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-2">
+        <div className="text-center">
+          <div className="font-display text-lg text-earth-brown tracking-widest">
+            ✦ 성소 시장이 비어있음
+          </div>
+          <div className="font-mono text-[10px] text-earth-brown mt-1">
+            접근권은 있지만 남은 성소 카드가 없어요
+          </div>
+        </div>
+        <SunsetCTA size="sm" onClick={onSkip}>다음 →</SunsetCTA>
+      </div>
+    )
+  }
+
+  // Case C — eligible + market has cards → picker
   return (
     <div className="flex flex-col gap-3">
-
-      {/* Explainer */}
       <div className="text-center">
-        <div className="font-serif italic text-base text-night-indigo">🎴 손패 보충</div>
-        <div className="font-mono text-[10px] text-earth-brown mt-0.5 leading-relaxed">
-          방금 카드 냈으니 손패 <span className="font-display text-sm">{humanHand.length}</span>장 →
-          아래 <span className="text-sunset-deep font-bold">1장 골라 손패 3장으로 채우기</span>
+        <div className="font-display text-lg text-gold tracking-widest font-bold"
+             style={{ textShadow: '0 0 8px rgba(212,165,116,0.6)' }}>
+          ✦ 성소 카드 획득 기회
+        </div>
+        <div className="font-mono text-[10px] text-earth-brown mt-1">
+          직전보다 큰 번호를 냈어요 · 1장 획득 or 스킵
         </div>
       </div>
 
-      {/* Sanctuary status — ALWAYS visible during draw so the player learns
-          when they do/don't have access. If eligible + market has cards,
-          it's a full picker. If not eligible, it's a short explanation
-          of why. If eligible but market empty, an explicit note. */}
-      {eligibleForSanctuary && state.sanctuaryMarket.length > 0 ? (
-        <div className="border-2 border-gold rounded-lg bg-gold/8 p-3 shadow-[0_0_16px_rgba(212,165,116,0.15)]">
-          <div className="text-center mb-2">
-            <div className="font-display text-lg text-gold tracking-widest font-bold"
-                 style={{ textShadow: '0 0 8px rgba(212,165,116,0.6)' }}>
-              ✦ 성소 카드 획득 기회
+      <div className="flex justify-center gap-2 flex-wrap">
+        {market.map((s) => (
+          <button
+            key={s.id}
+            onClick={() => onPick(pickedId === s.id ? null : s.id)}
+            className={`text-left px-2.5 py-2 rounded-md border-2 max-w-[120px] transition-all
+                        ${pickedId === s.id
+                          ? 'border-gold bg-gold/25 -translate-y-1 shadow-gold-glow'
+                          : 'border-earth-brown/50 bg-parch-light hover:border-gold/60 hover:-translate-y-0.5'}`}
+          >
+            <div className="font-serif italic text-night-indigo text-xs leading-tight font-semibold">
+              {s.name}
             </div>
-            <div className="font-mono text-[10px] text-earth-brown mt-1">
-              직전보다 큰 번호를 냈어요! <span className="text-gold font-bold">1장 골라서 지역 카드 뽑기</span>
-            </div>
-            {pickedSanctuary === null ? (
-              <div className="mt-1.5 font-mono text-[9px] text-sunset-deep font-bold animate-pulse uppercase">
-                ⬇ 성소 하나를 먼저 탭하세요 (안 고르면 스킵)
-              </div>
-            ) : (
-              <div className="mt-1.5 font-mono text-[9px] text-gold font-bold uppercase">
-                ✓ 선택됨 · 아래 지역 카드 탭하면 함께 획득
-              </div>
-            )}
-          </div>
-          <div className="flex justify-center gap-2 flex-wrap">
-            {state.sanctuaryMarket.map((s) => (
-              <button
-                key={s.id}
-                onClick={() => setPickedSanctuary(pickedSanctuary === s.id ? null : s.id)}
-                className={`text-left px-2.5 py-2 rounded-md border-2 max-w-[120px] transition-all
-                            ${pickedSanctuary === s.id
-                              ? 'border-gold bg-gold/25 -translate-y-1 shadow-gold-glow'
-                              : 'border-earth-brown/50 bg-parch-light hover:border-gold/60 hover:-translate-y-0.5'}`}
-              >
-                <div className="font-serif italic text-night-indigo text-xs leading-tight font-semibold">
-                  {s.name}
-                </div>
-                <div className="font-mono text-[8px] text-mist-blue mt-1 leading-tight">{s.description}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : eligibleForSanctuary ? (
-        <div className="border border-earth-brown/40 rounded bg-parch-light/60 p-2 text-center">
-          <div className="font-mono text-[10px] text-earth-brown">
-            ✦ 성소 접근권 있음 · 다만 <span className="text-sunset-deep">시장에 남은 성소가 없음</span>
-          </div>
-        </div>
-      ) : (
-        <div className="border border-earth-brown/40 rounded bg-parch-light/60 p-2 text-center">
-          <div className="font-mono text-[10px] text-earth-brown">
-            ✦ 이번엔 성소 접근 <span className="text-sunset-deep font-bold">불가</span> · <span className="opacity-70">직전보다 낮은 번호를 냈음</span>
-          </div>
-        </div>
-      )}
+            <div className="font-mono text-[8px] text-mist-blue mt-1 leading-tight">{s.description}</div>
+          </button>
+        ))}
+      </div>
 
-      {/* Region market */}
-      <div>
-        <div className="text-center mb-1.5">
-          <div className="font-mono text-[10px] tracking-widest text-sunset-deep uppercase font-bold">
-            ⬇ 지역 카드 3장 중 1장 (필수)
-          </div>
-          <div className="font-mono text-[9px] text-earth-brown">
-            탭 → 손패로 · 다음 라운드에 낼 수 있음
-          </div>
+      <div className="flex items-center justify-center gap-3 mt-1">
+        <SunsetCTA variant="ghost" size="sm" onClick={onSkip}>스킵 →</SunsetCTA>
+        <SunsetCTA
+          size="sm"
+          disabled={pickedId === null}
+          onClick={onConfirm}
+        >
+          성소 획득 →
+        </SunsetCTA>
+      </div>
+    </div>
+  )
+}
+
+function RegionStep({
+  market, humanHand, pickedSanctuaryId, sanctuaryMarket, onPick,
+}: {
+  market: readonly RegionCard[]
+  humanHand: readonly RegionCard[]
+  pickedSanctuaryId: number | null
+  sanctuaryMarket: readonly SanctuaryCard[]
+  onPick: (c: RegionCard) => void
+}) {
+  const pickedSanctuary = pickedSanctuaryId != null
+    ? sanctuaryMarket.find((s) => s.id === pickedSanctuaryId)
+    : null
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="text-center">
+        <div className="font-display text-lg text-sunset-deep tracking-widest font-bold">
+          🎴 지역 카드 뽑기
         </div>
-        <div className="flex justify-center gap-2 flex-wrap">
-          {state.regionMarket.map((c) => (
-            <button
-              key={c.id}
-              onClick={() => onPick(c, eligibleForSanctuary ? pickedSanctuary : null)}
-              className="hover:-translate-y-1 transition-transform"
-            >
-              <RegionCardView card={c} size="md" />
-            </button>
-          ))}
+        <div className="font-mono text-[10px] text-earth-brown mt-1">
+          3장 중 1장 → 손패로 · 다음 라운드에 낼 후보
         </div>
+        {pickedSanctuary && (
+          <div className="mt-1.5 font-mono text-[9px] text-gold font-bold uppercase">
+            ✓ 성소 <span className="font-serif italic normal-case">{pickedSanctuary.name}</span> 함께 획득
+          </div>
+        )}
+      </div>
+
+      <div className="flex justify-center gap-2 flex-wrap">
+        {market.map((c) => (
+          <button
+            key={c.id}
+            onClick={() => onPick(c)}
+            className="hover:-translate-y-1 transition-transform"
+          >
+            <RegionCardView card={c} size="md" />
+          </button>
+        ))}
       </div>
 
       {/* Current hand snapshot — sm size so condition/reward icons are legible */}
-      <div>
+      <div className="mt-1">
         <div className="text-center font-mono text-[9px] tracking-widest text-earth-brown uppercase mb-1">
-          현재 내 손패 · {humanHand.length}장 (조건/보상 확인용)
+          현재 내 손패 · {humanHand.length}장
         </div>
         <div className="flex justify-center gap-1.5 items-center flex-wrap">
           {humanHand.map((c) => (
