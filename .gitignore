@@ -23,3 +23,10 @@ dist-ssr
 *.sln
 *.sw?
 .vercel
+
+# E2E artifacts (Playwright)
+e2e/screenshots/
+e2e/report/
+e2e/report.json
+test-results/
+playwright-report/

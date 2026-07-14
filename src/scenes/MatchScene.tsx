@@ -3,29 +3,32 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useMatch } from '../store/matchStore.ts'
 import { useUI } from '../store/uiStore.ts'
 import { RegionCardView } from '../ui/RegionCardView.tsx'
+import { SanctuaryCardView } from '../ui/SanctuaryCardView.tsx'
 import { Chip } from '../ui/Chip.tsx'
 import { SunsetCTA } from '../ui/SunsetCTA.tsx'
-import { hasSanctuaryAccess, currentDrawer, isDrawPhaseComplete } from '../game/match.ts'
+import {
+  currentDrafter,
+  isDraftPhaseComplete,
+  sanctuaryDrawSize,
+  TOTAL_ROUNDS,
+} from '../game/match.ts'
 import type { RegionCard, SanctuaryCard } from '../game/types.ts'
 
 /**
  * Match scene layout — top to bottom:
- *   1. Header (round dot bar)
- *   2. Opponent strip (single row: icon + name + tableau count + sanctuary count)
- *   3. Opponent tableau (xs cards — 8 slots visible)
+ *   1. Header (round dot bar + phase chip)
+ *   2. Opponent strip
+ *   3. Opponent tableau (xs cards)
  *   4. My tableau (sm cards)
- *   5. Phase-appropriate content:
- *        - select phase → hand + tap-to-play
- *        - draw phase   → market picker + hand preview
+ *   5. Phase content:
+ *        - explore → hand + tap-to-play
+ *        - draft   → sanctuary chooser (multi-card) → region picker
  *   6. Me strip (footer)
- *
- * Entire container scrolls vertically so nothing gets clipped on tall
- * or dense phases (draw phase in particular can be 500+px tall).
  */
 export function MatchScene() {
   const state = useMatch((s) => s.state)
   const humanSelect = useMatch((s) => s.humanSelect)
-  const humanDraw = useMatch((s) => s.humanDraw)
+  const humanDraft = useMatch((s) => s.humanDraft)
   const progress = useMatch((s) => s.progress)
   const setScene = useUI((s) => s.setScene)
 
@@ -42,8 +45,9 @@ export function MatchScene() {
 
   const human = state.players.human
   const bot = state.players.bot
-  const drawer = currentDrawer(state)
-  const humanCanDraw = drawer === 'human'
+  const drafter = currentDrafter(state)
+  const humanCanDraft = drafter === 'human'
+  const isLastRound = state.round >= TOTAL_ROUNDS
 
   return (
     <div className="w-full h-full overflow-y-auto pt-safe pb-safe">
@@ -51,8 +55,13 @@ export function MatchScene() {
 
         {/* Header */}
         <div className="flex justify-between items-center">
-          <Chip variant="sunset" size="xs">R{state.round}/8</Chip>
-          <RoundDots current={state.round} total={8} />
+          <div className="flex items-center gap-1.5">
+            <Chip variant="sunset" size="xs">R{state.round}/{TOTAL_ROUNDS}</Chip>
+            {isLastRound && (
+              <Chip variant="gold" size="xs">최종 · 성소만</Chip>
+            )}
+          </div>
+          <RoundDots current={state.round} total={TOTAL_ROUNDS} />
         </div>
 
         {/* Opponent — compact strip (1 row) */}
@@ -62,6 +71,7 @@ export function MatchScene() {
           icon={bot.icon}
           hand={bot.hand.length}
           sanctuaries={bot.sanctuaries.length}
+          clues={countClues(bot)}
         />
 
         {/* Opponent tableau */}
@@ -77,38 +87,46 @@ export function MatchScene() {
           icon={human.icon}
           hand={human.hand.length}
           sanctuaries={human.sanctuaries.length}
+          clues={countClues(human)}
         />
 
         {/* Phase content */}
-        {state.phase === 'select' && (
-          <SelectPhase hand={human.hand} onPick={humanSelect} />
+        {state.phase === 'explore' && (
+          <SelectPhase
+            hand={human.hand}
+            onPick={humanSelect}
+            drawSize={sanctuaryDrawSize(state, 'human')}
+          />
         )}
 
-        {state.phase === 'draw' && (
+        {state.phase === 'draft' && (
           <div className="flex flex-col gap-3">
             {state.selections.human && state.selections.bot && (
               <PlayComparison humanNum={state.selections.human.id} botNum={state.selections.bot.id} />
             )}
 
-            {humanCanDraw && (
-              <DrawPanel
+            {humanCanDraft && (
+              <DraftPanel
                 key={state.round}
-                state={state}
-                onPick={(region, sanctId) => humanDraw(region, sanctId)}
-                eligibleForSanctuary={hasSanctuaryAccess(state, 'human')}
+                humanSanctuaryChoices={human.sanctuaryChoices}
+                regionMarket={state.regionMarket}
                 humanHand={human.hand}
+                isLastRound={isLastRound}
+                onSubmit={(region, sanctId) => humanDraft(region, sanctId)}
               />
             )}
 
-            {!humanCanDraw && !isDrawPhaseComplete(state) && (
+            {!humanCanDraft && !isDraftPhaseComplete(state) && (
               <div className="text-center font-serif italic text-mist-blue py-3">
-                상대가 뽑는 중...
+                상대가 결정 중...
               </div>
             )}
 
-            {isDrawPhaseComplete(state) && (
+            {isDraftPhaseComplete(state) && (
               <div className="flex justify-center py-2">
-                <SunsetCTA onClick={progress}>다음 라운드 →</SunsetCTA>
+                <SunsetCTA onClick={progress}>
+                  {isLastRound ? '점수 계산 →' : '다음 라운드 →'}
+                </SunsetCTA>
               </div>
             )}
           </div>
@@ -118,15 +136,22 @@ export function MatchScene() {
   )
 }
 
-/** Very thin single-row status strip. */
+/* ------------------------- Compact strips ------------------------- */
+
+function countClues(p: { tableau: readonly RegionCard[]; sanctuaries: readonly SanctuaryCard[] }): number {
+  return p.tableau.reduce((s, c) => s + c.clues, 0)
+    + p.sanctuaries.reduce((s, c) => s + c.clues, 0)
+}
+
 function CompactStrip({
-  side, name, icon, hand, sanctuaries,
+  side, name, icon, hand, sanctuaries, clues,
 }: {
   side: 'me' | 'foe'
   name: string
   icon: string
   hand: number
   sanctuaries: number
+  clues: number
 }) {
   const tint = side === 'me'
     ? 'bg-sunset/8 border-sunset/30'
@@ -138,15 +163,24 @@ function CompactStrip({
       <div className="ml-auto flex items-center gap-3">
         <StatMini label="손패" value={hand} />
         <StatMini label="성소" value={sanctuaries} color="text-gold" />
+        <StatMini label="지도" value={clues} color="text-mist-blue" prefix="📜" />
       </div>
     </div>
   )
 }
 
-function StatMini({ label, value, color = 'text-night-indigo' }: { label: string; value: number; color?: string }) {
+function StatMini({
+  label, value, color = 'text-night-indigo', prefix,
+}: {
+  label: string
+  value: number
+  color?: string
+  prefix?: string
+}) {
   return (
     <div className="flex items-center gap-1">
       <span className="font-mono text-[9px] tracking-widest text-earth-brown uppercase">{label}</span>
+      {prefix && <span className="text-[10px]">{prefix}</span>}
       <span className={`font-display text-base leading-none ${color}`}>{value}</span>
     </div>
   )
@@ -227,16 +261,22 @@ function PlayComparison({ humanNum, botNum }: { humanNum: number; botNum: number
   )
 }
 
+/* ------------------------- Explore phase ------------------------- */
+
 function SelectPhase({
-  hand, onPick,
+  hand, onPick, drawSize,
 }: {
   hand: readonly RegionCard[]
   onPick: (c: RegionCard) => void
+  drawSize: number
 }) {
   return (
     <div className="flex flex-col items-center gap-2">
       <div className="font-serif italic text-mist-blue text-center">
         손패 3장 중 <span className="text-sunset-deep">1장을 탭</span>하세요
+      </div>
+      <div className="font-mono text-[10px] text-earth-brown text-center">
+        오름차순 유지 시 성소 <span className="font-display text-gold">{drawSize}</span>장 뽑아 1장 선택
       </div>
       <div className="flex justify-center gap-2">
         <AnimatePresence>
@@ -256,54 +296,73 @@ function SelectPhase({
   )
 }
 
+/* ------------------------- Draft phase ------------------------- */
+
 /**
- * DrawPanel — two-step sequential dialog:
- *   Step 1: sanctuary check (grant / no market / not eligible → "다음")
- *   Step 2: pick a region card (mandatory, ends the round)
+ * DraftPanel — two-step sequential dialog for End of Exploration.
  *
- * The parent passes a fresh instance per round via `key={state.round}`
- * so the internal step + pick state reset automatically at round start.
+ *   Step 1: sanctuary chooser (any of choices OR skip)
+ *   Step 2: region picker (skipped on R8)
+ *
+ * The parent passes a fresh instance per round via `key={state.round}` so
+ * the internal step + pick state reset automatically at round start.
  */
-function DrawPanel({
-  state, onPick, eligibleForSanctuary, humanHand,
+function DraftPanel({
+  humanSanctuaryChoices, regionMarket, humanHand, isLastRound, onSubmit,
 }: {
-  state: { regionMarket: readonly RegionCard[]; sanctuaryMarket: readonly SanctuaryCard[] }
-  onPick: (region: RegionCard, sanctuaryId: number | null) => void
-  eligibleForSanctuary: boolean
+  humanSanctuaryChoices: readonly SanctuaryCard[]
+  regionMarket: readonly RegionCard[]
   humanHand: readonly RegionCard[]
+  isLastRound: boolean
+  onSubmit: (region: RegionCard | null, sanctuaryId: number | null) => void
 }) {
-  const [step, setStep] = useState<'sanctuary' | 'region'>('sanctuary')
+  const hasChoices = humanSanctuaryChoices.length > 0
+  // R8 has no region draft — always route through sanctuary step (its 0-choice branch handles "complete" CTA).
+  const [step, setStep] = useState<'sanctuary' | 'region'>(
+    hasChoices || isLastRound ? 'sanctuary' : 'region'
+  )
   const [pickedSanctuary, setPickedSanctuary] = useState<number | null>(null)
 
-  const advance = () => setStep('region')
+  const advance = () => setStep(isLastRound ? 'sanctuary' : 'region')
 
   return (
     <div className="border-2 border-earth-brown/40 rounded-xl bg-parch-light/80 p-4 shadow-parchment">
       {/* Step indicator */}
       <div className="flex items-center justify-center gap-2 mb-3">
         <StepDot filled={step === 'sanctuary'} label="1 · 성소" />
-        <span className="text-earth-brown/50 text-xs">→</span>
-        <StepDot filled={step === 'region'} label="2 · 지역" />
+        {!isLastRound && (
+          <>
+            <span className="text-earth-brown/50 text-xs">→</span>
+            <StepDot filled={step === 'region'} label="2 · 지역" />
+          </>
+        )}
       </div>
 
       {step === 'sanctuary' && (
         <SanctuaryStep
-          eligible={eligibleForSanctuary}
-          market={state.sanctuaryMarket}
+          choices={humanSanctuaryChoices}
           pickedId={pickedSanctuary}
           onPick={setPickedSanctuary}
-          onSkip={() => { setPickedSanctuary(null); advance() }}
-          onConfirm={advance}
+          isLastRound={isLastRound}
+          onSkip={() => {
+            setPickedSanctuary(null)
+            if (isLastRound) onSubmit(null, null)
+            else advance()
+          }}
+          onConfirm={() => {
+            if (isLastRound) onSubmit(null, pickedSanctuary)
+            else advance()
+          }}
         />
       )}
 
-      {step === 'region' && (
+      {step === 'region' && !isLastRound && (
         <RegionStep
-          market={state.regionMarket}
+          market={regionMarket}
           humanHand={humanHand}
           pickedSanctuaryId={pickedSanctuary}
-          sanctuaryMarket={state.sanctuaryMarket}
-          onPick={(region) => onPick(region, eligibleForSanctuary ? pickedSanctuary : null)}
+          humanSanctuaryChoices={humanSanctuaryChoices}
+          onPick={(region) => onSubmit(region, pickedSanctuary)}
         />
       )}
     </div>
@@ -321,17 +380,17 @@ function StepDot({ filled, label }: { filled: boolean; label: string }) {
 }
 
 function SanctuaryStep({
-  eligible, market, pickedId, onPick, onSkip, onConfirm,
+  choices, pickedId, onPick, onSkip, onConfirm, isLastRound,
 }: {
-  eligible: boolean
-  market: readonly SanctuaryCard[]
+  choices: readonly SanctuaryCard[]
   pickedId: number | null
   onPick: (id: number | null) => void
   onSkip: () => void
   onConfirm: () => void
+  isLastRound: boolean
 }) {
-  // Case A — not eligible this round
-  if (!eligible) {
+  // No sanctuary access this round.
+  if (choices.length === 0) {
     return (
       <div className="flex flex-col items-center gap-3 py-2">
         <div className="text-center">
@@ -339,71 +398,51 @@ function SanctuaryStep({
             ✦ 성소 획득 실패
           </div>
           <div className="font-mono text-[10px] text-earth-brown mt-1">
-            직전 라운드보다 낮은 번호를 냈어요<br />
-            <span className="opacity-70">오름차순 유지 시 다음 기회</span>
+            {isLastRound
+              ? '이번엔 성소를 뽑지 못함'
+              : '직전 라운드보다 낮은 번호 · 오름차순 유지 시 다음 기회'}
           </div>
         </div>
-        <SunsetCTA size="sm" onClick={onSkip}>다음 →</SunsetCTA>
+        <SunsetCTA size="sm" onClick={onSkip}>
+          {isLastRound ? '완료 →' : '다음 →'}
+        </SunsetCTA>
       </div>
     )
   }
 
-  // Case B — eligible but sanctuary market empty
-  if (market.length === 0) {
-    return (
-      <div className="flex flex-col items-center gap-3 py-2">
-        <div className="text-center">
-          <div className="font-display text-lg text-earth-brown tracking-widest">
-            ✦ 성소 시장이 비어있음
-          </div>
-          <div className="font-mono text-[10px] text-earth-brown mt-1">
-            접근권은 있지만 남은 성소 카드가 없어요
-          </div>
-        </div>
-        <SunsetCTA size="sm" onClick={onSkip}>다음 →</SunsetCTA>
-      </div>
-    )
-  }
-
-  // Case C — eligible + market has cards → picker
+  // Choices exist — pick one or skip all.
   return (
     <div className="flex flex-col gap-3">
       <div className="text-center">
         <div className="font-display text-lg text-gold tracking-widest font-bold"
              style={{ textShadow: '0 0 8px rgba(212,165,116,0.6)' }}>
-          ✦ 성소 카드 획득 기회
+          ✦ {choices.length}장 중 1장 선택
         </div>
         <div className="font-mono text-[10px] text-earth-brown mt-1">
-          직전보다 큰 번호를 냈어요 · 1장 획득 or 스킵
+          나머지는 성소 덱 하단으로
         </div>
       </div>
 
-      <div className="flex justify-center gap-2 flex-wrap">
-        {market.map((s) => (
-          <button
+      <div className="flex justify-center gap-3 flex-wrap max-h-[380px] overflow-y-auto py-2">
+        {choices.map((s) => (
+          <SanctuaryCardView
             key={s.id}
+            card={s}
+            size="md"
+            selected={pickedId === s.id}
             onClick={() => onPick(pickedId === s.id ? null : s.id)}
-            className={`text-left px-2.5 py-2 rounded-md border-2 max-w-[120px] transition-all
-                        ${pickedId === s.id
-                          ? 'border-gold bg-gold/25 -translate-y-1 shadow-gold-glow'
-                          : 'border-earth-brown/50 bg-parch-light hover:border-gold/60 hover:-translate-y-0.5'}`}
-          >
-            <div className="font-serif italic text-night-indigo text-xs leading-tight font-semibold">
-              {s.name}
-            </div>
-            <div className="font-mono text-[8px] text-mist-blue mt-1 leading-tight">{s.description}</div>
-          </button>
+          />
         ))}
       </div>
 
       <div className="flex items-center justify-center gap-3 mt-1">
-        <SunsetCTA variant="ghost" size="sm" onClick={onSkip}>스킵 →</SunsetCTA>
+        <SunsetCTA variant="ghost" size="sm" onClick={onSkip}>모두 반환 →</SunsetCTA>
         <SunsetCTA
           size="sm"
           disabled={pickedId === null}
           onClick={onConfirm}
         >
-          성소 획득 →
+          획득 → {isLastRound ? '' : '지역 뽑기'}
         </SunsetCTA>
       </div>
     </div>
@@ -411,16 +450,16 @@ function SanctuaryStep({
 }
 
 function RegionStep({
-  market, humanHand, pickedSanctuaryId, sanctuaryMarket, onPick,
+  market, humanHand, pickedSanctuaryId, humanSanctuaryChoices, onPick,
 }: {
   market: readonly RegionCard[]
   humanHand: readonly RegionCard[]
   pickedSanctuaryId: number | null
-  sanctuaryMarket: readonly SanctuaryCard[]
+  humanSanctuaryChoices: readonly SanctuaryCard[]
   onPick: (c: RegionCard) => void
 }) {
   const pickedSanctuary = pickedSanctuaryId != null
-    ? sanctuaryMarket.find((s) => s.id === pickedSanctuaryId)
+    ? humanSanctuaryChoices.find((s) => s.id === pickedSanctuaryId)
     : null
 
   return (
@@ -430,7 +469,7 @@ function RegionStep({
           🎴 지역 카드 뽑기
         </div>
         <div className="font-mono text-[10px] text-earth-brown mt-1">
-          3장 중 1장 → 손패로 · 다음 라운드에 낼 후보
+          시장에서 1장 → 손패로 (다음 라운드 후보)
         </div>
         {pickedSanctuary && (
           <div className="mt-1.5 font-mono text-[9px] text-gold font-bold uppercase">
@@ -439,9 +478,6 @@ function RegionStep({
         )}
       </div>
 
-      {/* Grid keeps 3 market cards on one row even on narrow phones.
-          sm (92px) × 3 = 276px + 8px gaps fits inside the DrawPanel
-          parchment on iPhone 12 mini widths. */}
       <div className="grid grid-cols-3 gap-1 justify-items-center">
         {market.map((c) => (
           <button
@@ -454,7 +490,7 @@ function RegionStep({
         ))}
       </div>
 
-      {/* Current hand snapshot — sm size so condition/reward icons are legible */}
+      {/* Current hand snapshot */}
       <div className="mt-1">
         <div className="text-center font-mono text-[9px] tracking-widest text-earth-brown uppercase mb-1">
           현재 내 손패 · {humanHand.length}장

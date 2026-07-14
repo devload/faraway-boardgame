@@ -2,17 +2,29 @@ import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
 import type { MatchState, RegionCard } from '../game/types.ts'
 import {
-  botDraw,
-  currentDrawer,
+  botDraft,
+  currentDrafter,
   endRound,
   fillBotSelection,
   initMatch,
-  isDrawPhaseComplete,
-  revealAndPlace,
+  isDraftPhaseComplete,
+  revealAndFindSanctuaries,
   selectCard,
-  takeDraw,
+  takeDraft,
 } from '../game/match.ts'
 
+/**
+ * Flow orchestrator on top of pure match functions.
+ *
+ * Single flow:
+ *   humanSelect(card)  → selectCard → fillBotSelection → revealAndFindSanctuaries
+ *                        (state now in 'draft')
+ *                        If bot goes first and doesn't need human input to
+ *                        keep a sanctuary → run botDraft immediately so the
+ *                        human sees the draft screen at their turn.
+ *   humanDraft(...)   → takeDraft(human) → auto-run any queued bot → if
+ *                       draft complete → endRound → maybe end match.
+ */
 type MatchStore = {
   state: MatchState | null
 
@@ -22,10 +34,14 @@ type MatchStore = {
   /** Human selects a card from their hand → starts round resolution. */
   humanSelect: (card: RegionCard) => void
 
-  /** Human takes their draw action (region + optional sanctuary). */
-  humanDraw: (region: RegionCard, sanctuaryId: number | null) => void
+  /**
+   * Human takes their draft turn.
+   *   region: which market card they claim (null on R8, no draft).
+   *   sanctuaryId: which of their sanctuary choices they keep, or null.
+   */
+  humanDraft: (region: RegionCard | null, sanctuaryId: number | null) => void
 
-  /** After human draws (or automatically), progress the round further. */
+  /** After human drafts (or automatically), progress the round further. */
   progress: () => void
 }
 
@@ -45,25 +61,22 @@ export const useMatch = create<MatchStore>()(
       if (!cur) return
       let next = selectCard(cur, 'human', card)
       next = fillBotSelection(next)
-      next = revealAndPlace(next)
-      // After placement, we're in 'draw' phase. If bot goes first, auto-run it.
-      const drawer = currentDrawer(next)
-      if (drawer === 'bot') {
-        next = botDraw(next)
+      next = revealAndFindSanctuaries(next)
+      // If bot drafts first, let it go now.
+      if (currentDrafter(next) === 'bot') {
+        next = botDraft(next)
       }
       set({ state: next })
     },
 
-    humanDraw: (region, sanctuaryId) => {
+    humanDraft: (region, sanctuaryId) => {
       const cur = get().state
       if (!cur) return
-      let next = takeDraw(cur, 'human', region, sanctuaryId)
-      // If bot was queued next, run its draw automatically.
-      while (currentDrawer(next) === 'bot') {
-        next = botDraw(next)
+      let next = takeDraft(cur, 'human', region, sanctuaryId)
+      while (currentDrafter(next) === 'bot') {
+        next = botDraft(next)
       }
-      // Round complete?
-      if (isDrawPhaseComplete(next)) {
+      if (isDraftPhaseComplete(next)) {
         next = endRound(next)
       }
       set({ state: next })
@@ -73,11 +86,10 @@ export const useMatch = create<MatchStore>()(
       const cur = get().state
       if (!cur) return
       let next = cur
-      // Advance any auto-runnable state (bot draws waiting, or round ending).
-      while (currentDrawer(next) === 'bot') {
-        next = botDraw(next)
+      while (currentDrafter(next) === 'bot') {
+        next = botDraft(next)
       }
-      if (isDrawPhaseComplete(next)) {
+      if (isDraftPhaseComplete(next)) {
         next = endRound(next)
       }
       set({ state: next })

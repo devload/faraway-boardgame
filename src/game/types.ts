@@ -1,12 +1,39 @@
 /**
  * Faraway — domain types.
  *
- * The vocabulary maps to the original board game where possible:
- *   - Region card  = 지역 카드 (numbered 1..N, played into the 8-slot lineup)
- *   - Sanctuary    = 성소 카드 (bonus scoring cards, gained via ascending sequence)
- *   - Icon         = the visual language used for scoring conditions
- *   - Requirement  = what a card needs on its LEFT to score
- *   - Reward       = what a card contributes to its RIGHT when placed
+ * Vocabulary bridge to the original board game (Catch Up Games, 2023):
+ *
+ *   • Region card    = the numbered exploration cards (1..N) played into
+ *                      the 8-slot lineup. Each card has a day OR night
+ *                      timing, some reward icons, an optional clue, and
+ *                      often a "quest" (icon requirement) worth points at
+ *                      end of game.
+ *   • Sanctuary card = smaller bonus cards. Each has TWO scoring halves:
+ *                        - top:    "immediate" bonus at end of game
+ *                                  (resource multipliers, night counters,
+ *                                  or an instant Clue that raises the
+ *                                  Sanctuary draw size).
+ *                        - bottom: "side-quest" scoring against tableau
+ *                                  patterns.
+ *                      Some sanctuaries can supply extra clues (immediate).
+ *   • Icon           = shared visual language for scoring conditions.
+ *                      We keep the 5-icon vocabulary from our earlier
+ *                      pass but map cleanly onto the original:
+ *                        - moon  = 🌙  night marker (also usable as a
+ *                                  quest resource)
+ *                        - day   = ☀️  day marker
+ *                        - shell = 🐚  resource "stone"    (uddu)
+ *                        - feather=🪶  resource "thistle"  (goldlog)
+ *                        - forest= 🌲  resource "deer"     (okiko)
+ *                      Distribution keeps shell most common → feather
+ *                      rarest, matching the original scarcity curve.
+ *   • Clue           = 📜 pictured on some cards. In End of Exploration
+ *                      you draw (1 + clueCount) sanctuaries and keep one.
+ *
+ * Scoring intent (reverse scan): each card is turned over right→left.
+ * A card's requirement is checked against the icons summed from cards
+ * to its LEFT (including sanctuaries — sanctuaries contribute icons
+ * once they've been chosen). Then sanctuaries score their own halves.
  */
 
 export type Icon = 'moon' | 'day' | 'shell' | 'feather' | 'forest'
@@ -49,26 +76,74 @@ export type RegionCard = {
   /** Short evocative subtitle rendered under the name in italic serif. */
   subtitle?: string
   illustration: Illustration
-  /** Icons this card adds to the tableau when placed (activated immediately). */
+  /**
+   * Whether the card carries the night (🌙) or day (☀️) marker.
+   * In the original this affects which sanctuary bonuses count.
+   * Independent of `rewards` — a card can be a Night card and still
+   * offer, say, a shell reward.
+   */
+  isNight: boolean
+  /**
+   * Icons this card adds to the tableau when placed (activated
+   * immediately for future-quest satisfaction). Excludes the day/night
+   * marker, which is tracked separately via `isNight`.
+   */
   rewards: Icon[]
   /**
+   * How many clue pictograms are printed on this card. Each clue raises
+   * the number of Sanctuary cards you draw during "Find Sanctuaries" by
+   * one. Most cards have 0; a handful have 1.
+   */
+  clues: number
+  /**
    * Icons that must appear (summed) among cards to the LEFT of this one.
-   * Empty = no requirement (always scores base points).
+   * Empty = no quest (safe flat points).
    */
   requirement: IconRequirement
   /**
    * Points if requirement met (or flat points if requirement is empty).
-   * Cards with a big requirement have big points; safe cards have low flat points.
+   * Cards with a big requirement have big points; safe cards have low
+   * flat points.
    */
   points: number
+}
+
+/** Full scoring context available to any sanctuary scoring function. */
+export type SanctuaryScoreCtx = {
+  readonly tableau: readonly RegionCard[]
+  readonly sanctuaries: readonly SanctuaryCard[]
+  /** Total moon (night) cards in the tableau. Precomputed for convenience. */
+  readonly nightCount: number
+  /** Total day cards in the tableau. */
+  readonly dayCount: number
+  /** Icon totals across tableau rewards + isNight marker as moon. */
+  readonly iconTotals: Record<Icon, number>
 }
 
 export type SanctuaryCard = {
   id: number
   name: string
-  description: string
-  /** Runs against final tableau + other sanctuaries. */
-  scoreFn: (tableau: readonly RegionCard[], sanctuaries: readonly SanctuaryCard[]) => number
+  /** Human-readable TOP-half rule (bonus). */
+  topLabel: string
+  /** Human-readable BOTTOM-half rule (side-quest). */
+  bottomLabel: string
+  /**
+   * Extra clues this sanctuary supplies while it is in your hand-or-tableau.
+   * Applied at the "Find Sanctuaries" step of the FOLLOWING round.
+   * 0 for most, 1 for a handful.
+   */
+  clues: number
+  /** Top-half scoring at end of game. */
+  topScoreFn: (ctx: SanctuaryScoreCtx) => number
+  /** Bottom-half scoring at end of game. */
+  bottomScoreFn: (ctx: SanctuaryScoreCtx) => number
+  /**
+   * Optional: icons this sanctuary contributes to left-side counts for
+   * region quests. Original rulebook: sanctuaries with an icon in the
+   * corner count toward those totals. Empty for the reworked pool since
+   * we keep icon-supply mainly on regions.
+   */
+  supplies?: Icon[]
 }
 
 /** For MVP we run 1 human + 1 bot; type stays open for future expansion. */
@@ -81,27 +156,44 @@ export type PlayerState = {
   hand: RegionCard[]
   tableau: RegionCard[]          // grows left → right, max 8
   sanctuaries: SanctuaryCard[]
+  /**
+   * Sanctuary cards drawn THIS round (during "Find Sanctuaries") that
+   * are pending a keep-one-return-rest decision in the Draft phase.
+   * Cleared after the draft resolves.
+   */
+  sanctuaryChoices: SanctuaryCard[]
 }
 
 export type MatchPhase =
-  | 'select'         // players pick from hand (simultaneous, bot auto-picks)
-  | 'reveal'         // brief pause to show what was played
-  | 'draw'           // draw order in progress
-  | 'end'            // game complete → scoring
+  /** Phase 1: players simultaneously pick one region from hand (face-down). */
+  | 'explore'
+  /** Phase 2: reveal + auto-resolve Find-Sanctuaries (deal choices per player). */
+  | 'reveal'
+  /**
+   * Phase 3: End of Exploration — resolved in draw order (lowest # first).
+   * Each turn a player takes a Region from the market AND locks in one
+   * of their sanctuary choices (or none if they weren't eligible).
+   */
+  | 'draft'
+  /** Match complete → scoring. */
+  | 'end'
 
 export type MatchState = {
   round: number           // 1..8
   players: Record<PlayerId, PlayerState>
   regionMarket: RegionCard[]
   regionDeck: RegionCard[]
-  sanctuaryMarket: SanctuaryCard[]
+  /**
+   * Sanctuary deck (face-down). Cards are drawn from top and returned
+   * to the BOTTOM when a player discards choices they didn't keep.
+   */
   sanctuaryDeck: SanctuaryCard[]
   phase: MatchPhase
   /** This round's plays (null until each player selects). */
   selections: Record<PlayerId, RegionCard | null>
-  /** Draw order this round, computed after both players select. */
+  /** Draw order this round, computed after reveal (lowest # goes first). */
   drawOrder: PlayerId[]
-  /** Index into drawOrder — which player is currently taking their draw action. */
+  /** Index into drawOrder — which player is currently doing their draft. */
   drawIndex: number
   seed: number
 }
@@ -115,9 +207,16 @@ export type ScoreEntry = {
   leftIcons: Record<Icon, number>
 }
 
+export type SanctuaryScoreEntry = {
+  sanctuary: SanctuaryCard
+  topEarned: number
+  bottomEarned: number
+}
+
 export type ScoreBreakdown = {
   playerId: PlayerId
-  entries: ScoreEntry[]        // one per tableau slot, right-to-left order
+  entries: ScoreEntry[]              // one per tableau slot, right-to-left order
+  sanctuaryEntries: SanctuaryScoreEntry[]
   sanctuaryScore: number
   regionScore: number
   total: number

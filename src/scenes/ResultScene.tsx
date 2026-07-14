@@ -2,8 +2,9 @@ import { useMemo, useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useMatch } from '../store/matchStore.ts'
 import { useUI } from '../store/uiStore.ts'
-import { scorePlayer } from '../game/scoring.ts'
+import { scorePlayer, buildCtx, explorationDuration, resolveWinner } from '../game/scoring.ts'
 import { RegionCardView } from '../ui/RegionCardView.tsx'
+import { SanctuaryCardView } from '../ui/SanctuaryCardView.tsx'
 import { SunsetCTA } from '../ui/SunsetCTA.tsx'
 import { Chip } from '../ui/Chip.tsx'
 import { ICON_EMOJI } from '../game/types.ts'
@@ -67,20 +68,34 @@ export function ResultScene() {
     .reduce((sum, e) => sum + e.earned, 0)
 
   // Running sanctuary scores tick per sanctuary reveal step.
+  // Each sanctuary contributes top + bottom halves, computed via full ctx.
   const humanSancts = state.players.human.sanctuaries
   const botSancts = state.players.bot.sanctuaries
+  const humanCtx = buildCtx(state.players.human.tableau, humanSancts)
+  const botCtx = buildCtx(state.players.bot.tableau, botSancts)
   const runningSanctuaryHuman = humanSancts
     .slice(0, sanctStep)
-    .reduce((sum, s) => sum + s.scoreFn(state.players.human.tableau, humanSancts), 0)
+    .reduce((sum, s) => sum + s.topScoreFn(humanCtx) + s.bottomScoreFn(humanCtx), 0)
   const runningSanctuaryBot = botSancts
     .slice(0, sanctStep)
-    .reduce((sum, s) => sum + s.scoreFn(state.players.bot.tableau, botSancts), 0)
+    .reduce((sum, s) => sum + s.topScoreFn(botCtx) + s.bottomScoreFn(botCtx), 0)
 
   const humanTotal = runningRegionHuman + runningSanctuaryHuman
   const botTotal = runningRegionBot + runningSanctuaryBot
 
-  const humanWon = humanTotal > botTotal
-  const draw = humanTotal === botTotal
+  // Exploration-duration tiebreaker (official rule):
+  //   On equal totals, the player with the LOWER exploration duration
+  //   (sum of played card numbers) wins. Draws are only possible if both
+  //   totals AND both durations match — very rare but possible.
+  const humanDuration = explorationDuration(state.players.human.tableau)
+  const botDuration = explorationDuration(state.players.bot.tableau)
+  const rawTie = humanTotal === botTotal
+  const winnerCode = resolveWinner(
+    { total: humanTotal, tableau: state.players.human.tableau },
+    { total: botTotal, tableau: state.players.bot.tableau },
+  )
+  const humanWon = winnerCode === 'a'
+  const draw = winnerCode === 'draw'
 
   return (
     <div className="w-full h-full flex flex-col pt-safe pb-safe px-4 overflow-y-auto">
@@ -187,7 +202,19 @@ export function ResultScene() {
             {humanWon ? '승리' : draw ? '무승부' : '패배'}
           </div>
           <div className="font-serif italic text-mist-blue mt-1">
-            {humanWon ? '여명의 챔피언' : draw ? '동등한 여정' : '더 좋은 여정을 기약하며'}
+            {rawTie && !draw
+              ? (humanWon ? '동점 · 여정 짧음으로 승리' : '동점 · 여정 짧음으로 패배')
+              : humanWon ? '여명의 챔피언' : draw ? '완전히 동등한 여정' : '더 좋은 여정을 기약하며'}
+          </div>
+          {/* Exploration duration line — always shown at end for transparency */}
+          <div className="mt-3 flex items-center justify-center gap-4 font-mono text-[10px] tracking-widest uppercase text-earth-brown">
+            <span>
+              내 여정 <span className="font-display text-sm text-night-indigo">{humanDuration}</span>
+            </span>
+            <span className="text-earth-brown/50">·</span>
+            <span>
+              상대 여정 <span className="font-display text-sm text-night-indigo">{botDuration}</span>
+            </span>
           </div>
         </motion.div>
       )}
@@ -283,10 +310,37 @@ function TableauReveal({
                 )}
               </AnimatePresence>
 
-              <div className={`transition-all duration-500 ${scored ? 'opacity-100' : 'opacity-40'}
+              {/* Face-down → face-up 3D flip. The card sits in a 3D
+                  container that rotates 180° on Y. Front face (index +1)
+                  is the RegionCardView; back face (index +0) is a
+                  parchment card back with the Faraway emblem. */}
+              <div className={`transition-all duration-500
                               ${highlight ? 'scale-110 -translate-y-1' : ''}`}
-                   style={highlight ? { filter: 'drop-shadow(0 0 14px rgba(212,165,116,0.75))' } : undefined}>
-                <RegionCardView card={card} size={cardSize} />
+                   style={{ perspective: '900px', ...(highlight ? { filter: 'drop-shadow(0 0 14px rgba(212,165,116,0.75))' } : {}) }}>
+                <motion.div
+                  animate={{ rotateY: scored ? 0 : 180 }}
+                  transition={{
+                    duration: 0.7,
+                    ease: [0.68, -0.15, 0.27, 1.35],
+                  }}
+                  style={{ transformStyle: 'preserve-3d', position: 'relative' }}
+                  className={cardSize === 'xs' ? 'w-[70px] h-[105px]' : 'w-[92px] h-[138px]'}
+                >
+                  {/* Back face (visible when not yet scored) */}
+                  <div
+                    className="absolute inset-0"
+                    style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}
+                  >
+                    <CardBack size={cardSize} />
+                  </div>
+                  {/* Front face */}
+                  <div
+                    className="absolute inset-0"
+                    style={{ backfaceVisibility: 'hidden' }}
+                  >
+                    <RegionCardView card={card} size={cardSize} />
+                  </div>
+                </motion.div>
               </div>
 
               {/* Success/fail pulse ring under the card that just got scored */}
@@ -481,63 +535,65 @@ function SanctuaryReveal({
           획득한 성소 없음
         </div>
       ) : (
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col items-center gap-3">
           {sanctuaries.map((s, i) => {
             const scored = i < revealed
             const isCurrent = i === revealed - 1
-            const contribution = s.scoreFn(tableau, sanctuaries)
+            const ctx = buildCtx(tableau, sanctuaries)
+            const topScore = s.topScoreFn(ctx)
+            const bottomScore = s.bottomScoreFn(ctx)
+            const contribution = topScore + bottomScore
             return (
               <motion.div
                 key={s.id}
                 initial={false}
                 animate={{
-                  opacity: scored ? 1 : 0.35,
-                  scale: isCurrent ? 1.03 : 1,
+                  opacity: scored ? 1 : 0.4,
+                  scale: isCurrent ? 1.04 : 1,
                 }}
                 transition={{ duration: 0.4 }}
-                className={`relative px-2 py-1.5 rounded border transition-colors
-                            ${scored
-                              ? contribution > 0
-                                ? 'border-gold bg-gold/15'
-                                : 'border-earth-brown/40 bg-parch-warm'
-                              : 'border-earth-brown/30 bg-parch-light'}`}
-                style={isCurrent ? { boxShadow: '0 0 12px rgba(212,165,116,0.5)' } : undefined}
+                className="relative"
+                style={isCurrent
+                  ? { filter: 'drop-shadow(0 0 14px rgba(212,165,116,0.7))' }
+                  : undefined}
               >
-                <div className="flex items-baseline justify-between gap-1">
-                  <div className="font-serif italic text-[11px] text-night-indigo font-semibold leading-tight">
-                    {s.name}
-                  </div>
-                  <AnimatePresence>
-                    {scored && (
-                      <motion.div
-                        initial={{ opacity: 0, scale: 0.5, y: -4 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        transition={{ type: 'spring', damping: 12, stiffness: 260 }}
-                        className={`font-display text-sm font-bold shrink-0 leading-none
-                                    ${contribution > 0 ? 'text-gold' : 'text-earth-brown'}`}
-                        style={contribution > 0 ? { textShadow: '0 0 6px rgba(212,165,116,0.6)' } : undefined}
-                      >
-                        {contribution > 0 ? `+${contribution}` : '0'}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-                <div className="font-mono text-[8px] text-earth-brown mt-0.5 leading-tight">
-                  {s.description}
-                </div>
+                <SanctuaryCardView
+                  card={s}
+                  size="sm"
+                  topScore={scored ? topScore : undefined}
+                  bottomScore={scored ? bottomScore : undefined}
+                />
+
+                {/* Contribution total badge (floats above card once scored) */}
+                <AnimatePresence>
+                  {scored && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.5, y: -8 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      transition={{ type: 'spring', damping: 12, stiffness: 260 }}
+                      className={`absolute -top-3 left-1/2 -translate-x-1/2 z-10
+                                  px-2 py-0.5 rounded-full font-mono text-[10px] font-bold border shrink-0
+                                  ${contribution > 0
+                                    ? 'bg-gold border-gold text-night-indigo shadow-gold-glow'
+                                    : 'bg-earth-brown border-earth-brown text-parch-cream'}`}
+                    >
+                      {contribution > 0 ? `총 +${contribution}` : '총 0'}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
                 {/* Ripple pulse when this sanctuary is scoring */}
                 <AnimatePresence>
                   {isCurrent && (
                     <motion.div
                       initial={{ opacity: 0.7, scale: 0.9 }}
-                      animate={{ opacity: 0, scale: 1.5 }}
+                      animate={{ opacity: 0, scale: 1.4 }}
                       transition={{ duration: 0.9, ease: 'easeOut' }}
-                      className="absolute inset-0 rounded pointer-events-none"
+                      className="absolute inset-0 rounded-lg pointer-events-none"
                       style={{
                         boxShadow: contribution > 0
-                          ? '0 0 0 2px #d4a574, 0 0 18px 2px rgba(212,165,116,0.55)'
-                          : '0 0 0 2px #8b6f47',
+                          ? '0 0 0 3px #d4a574, 0 0 20px 3px rgba(212,165,116,0.6)'
+                          : '0 0 0 3px #8b6f47, 0 0 16px 3px rgba(139,111,71,0.4)',
                       }}
                     />
                   )}
@@ -547,6 +603,42 @@ function SanctuaryReveal({
           })}
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * CardBack — the face-down side of a Region card during the results
+ * ceremony. Rendered with the same footprint as the front so the 3D
+ * flip lines up perfectly.
+ */
+function CardBack({ size }: { size: 'xs' | 'sm' }) {
+  const box = size === 'xs' ? 'w-[70px] h-[105px]' : 'w-[92px] h-[138px]'
+  const emblem = size === 'xs' ? 'text-2xl' : 'text-3xl'
+  return (
+    <div className={`${box} rounded-lg border-2 border-earth-brown/80 shadow-parchment
+                    flex items-center justify-center relative overflow-hidden`}
+         style={{
+           background: 'linear-gradient(160deg, #2d2438 0%, #4a3a5c 45%, #7c6ba8 100%)',
+         }}>
+      {/* Subtle radial glow center */}
+      <div className="absolute inset-0"
+           style={{
+             background: 'radial-gradient(ellipse at 50% 50%, rgba(212,165,116,0.25), transparent 65%)',
+           }} />
+      {/* Emblem */}
+      <div className="relative flex flex-col items-center gap-1">
+        <span className={`font-display font-bold ${emblem} text-gold leading-none`}
+              style={{ textShadow: '0 0 10px rgba(212,165,116,0.75)' }}>✦</span>
+        <span className="font-mono text-[7px] tracking-[0.3em] text-parch-cream/70 uppercase">
+          Faraway
+        </span>
+      </div>
+      {/* Corner ornaments */}
+      <span className="absolute top-1 left-1 text-gold/40 text-[10px] leading-none">✦</span>
+      <span className="absolute top-1 right-1 text-gold/40 text-[10px] leading-none">✦</span>
+      <span className="absolute bottom-1 left-1 text-gold/40 text-[10px] leading-none">✦</span>
+      <span className="absolute bottom-1 right-1 text-gold/40 text-[10px] leading-none">✦</span>
     </div>
   )
 }

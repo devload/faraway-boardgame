@@ -12,8 +12,7 @@ const SIZE = {
  * Painterly illustration backdrops per region type. Uses opaque multi-stop
  * gradients that mirror the mockup vibe: dramatic sunsets for mountains,
  * ocean-to-gold for water, lush greens for forest, coral roses for flower,
- * misty stone tones for ruin. Opacity is 1.0 so the cream parchment
- * doesn't bleed through and mute the palette.
+ * misty stone tones for ruin.
  */
 const ILLUSTRATION_BG: Record<RegionCard['illustration'], string> = {
   mountain: 'linear-gradient(155deg, #7c6ba8 0%, #b58ba4 32%, #c48b6e 62%, #d4a574 100%)',
@@ -25,8 +24,9 @@ const ILLUSTRATION_BG: Record<RegionCard['illustration'], string> = {
 
 /**
  * Region card view — Faraway visual language.
- * Big Cinzel number top-left, painterly illustration center, Cormorant
- * italic name mid, condition + reward strip bottom.
+ * Big Cinzel number top-left, day/night pip next to it, painterly illustration
+ * center, Cormorant italic name mid, condition + reward strip bottom, optional
+ * clue badge top-right corner.
  */
 export function RegionCardView({
   card,
@@ -44,6 +44,8 @@ export function RegionCardView({
   const s = SIZE[size]
   const bg = ILLUSTRATION_BG[card.illustration]
   const hasReq = Object.keys(card.requirement).length > 0
+  const timeIcon = card.isNight ? '🌙' : '☀️'
+  const timeColor = card.isNight ? 'text-mist-blue' : 'text-sunset-deep'
 
   return (
     <div
@@ -56,13 +58,20 @@ export function RegionCardView({
                   ${selected ? 'ring-2 ring-gold ring-offset-2 ring-offset-parch-cream -translate-y-1' : ''}
                   ${dim ? 'opacity-45' : ''}`}
     >
-      {/* Top row: number */}
-      <div className={`font-display font-bold ${s.num} text-night-indigo leading-none`}>
-        {card.id}
+      {/* Top row: number + day/night marker */}
+      <div className="flex items-center justify-between">
+        <div className={`font-display font-bold ${s.num} text-night-indigo leading-none flex items-baseline gap-0.5`}>
+          {card.id}
+          <span className={`text-[10px] ${timeColor} leading-none`}>{timeIcon}</span>
+        </div>
+        {card.clues > 0 && (
+          <span className="text-[10px] leading-none" title="지도(단서) 아이콘">
+            📜{card.clues > 1 && <span className="font-mono text-[8px] text-earth-brown">×{card.clues}</span>}
+          </span>
+        )}
       </div>
 
-      {/* Illustration — painterly gradient with soft top-left sheen and
-          bottom vignette to give the emoji a bit of depth. */}
+      {/* Illustration */}
       <div className="flex-1 rounded-md flex items-center justify-center relative overflow-hidden"
            style={{
              background: bg,
@@ -78,7 +87,7 @@ export function RegionCardView({
         </span>
       </div>
 
-      {/* Name + optional subtitle (md/lg only — too tight at xs/sm) */}
+      {/* Name + optional subtitle */}
       <div className="text-center">
         <div className={`font-serif italic font-semibold ${s.name} text-night-indigo leading-tight`}>
           {card.name}
@@ -92,9 +101,6 @@ export function RegionCardView({
 
       {/* Bottom info */}
       {s.showBody && (s.compact ? (
-        /* Compact: icons only, still readable at xs/sm. Always shows a
-           reward row (even for reward-less cards) so layout is consistent
-           and the "no reward" fact is explicit rather than a blank line. */
         <div className="border-t border-earth-brown/25 pt-1 flex flex-col gap-0.5">
           <div className="flex items-center justify-between gap-1 leading-none">
             <span className="flex items-center gap-0.5 min-w-0 overflow-hidden">
@@ -122,13 +128,7 @@ export function RegionCardView({
           </div>
         </div>
       ) : (
-        /* Full: labeled rows for md/lg. Reward-less cards get a distinct
-           mono "없음" so they read as "pure scorer" (won't help future
-           cards' conditions — only exists to bank its own points). */
         <div className="border-t border-earth-brown/25 pt-1 flex flex-col gap-0.5">
-          {/* Condition row — icons + counts split into separate spans so the
-              numbers render in a plain font (not the color-emoji font, which
-              would draw them tiny as if they were part of an emoji). */}
           <div className="flex items-center justify-between text-[10px] gap-1 min-w-0">
             <span className="font-mono text-earth-brown shrink-0 whitespace-nowrap">
               {hasReq ? '조건' : '기본'}
